@@ -1,26 +1,28 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0,0');
 
 :root {
-  --page-bg: #050d1f;
-  --surface: #0b1630;
-  --surface-2: #112045;
-  --border-default: rgba(79, 158, 255, 0.1);
-  --border-hover: rgba(79, 158, 255, 0.25);
+  --page-bg: #eef5ff;
+  --surface: #ffffff;
+  --surface-2: #eaf2ff;
+  --border-default: rgba(37, 99, 235, 0.16);
+  --border-hover: rgba(37, 99, 235, 0.34);
   --accent-blue: #4f9eff;
   --accent-light-blue: #7ec8ff;
   --accent-royal-blue: #3b82f6;
   --accent-bright-blue: #60a5fa;
   --button-gradient: linear-gradient(135deg, #1e40af, #2563eb, #3b82f6);
+  --button-text: #ffffff;
   --button-hover-shadow: rgba(37, 99, 235, 0.45);
-  --text-body: #e8f0ff;
-  --text-muted: #4a6080;
-  --text-muted-2: #7a96bb;
-  --error: #ff6b8a;
+  --text-body: #10213f;
+  --text-muted: #587099;
+  --text-muted-2: #6d84a8;
+  --error: #e11d48;
   --alert-info: #93c5fd;
-  --grid-lines: rgba(79, 158, 255, 0.04);
-  --bg-orb-1: rgba(79, 158, 255, 0.1);
-  --bg-orb-2: rgba(30, 80, 180, 0.14);
-  --bg-orb-3: rgba(100, 180, 255, 0.08);
+  --grid-lines: rgba(37, 99, 235, 0.08);
+  --bg-orb-1: rgba(79, 158, 255, 0.2);
+  --bg-orb-2: rgba(30, 80, 180, 0.18);
+  --bg-orb-3: rgba(100, 180, 255, 0.16);
   --strength-weak: #ff6b8a;
   --strength-medium: #fbbf24;
   --strength-strong: #3b82f6;
@@ -65,6 +67,25 @@ body {
   color: var(--text-body);
 }
 
+.material-symbols-rounded {
+  font-family: 'Material Symbols Rounded', sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24;
+}
+
 h1,
 h2,
 h3,
@@ -102,10 +123,14 @@ button {
   padding: 0.6rem 1rem;
   font-family: var(--font-family-base);
   font-weight: var(--font-weight-heading-bold);
-  color: var(--text-body);
+  color: var(--button-text);
   background: var(--button-gradient);
   cursor: pointer;
   transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+button .material-symbols-rounded {
+  color: inherit;
 }
 
 button:hover {

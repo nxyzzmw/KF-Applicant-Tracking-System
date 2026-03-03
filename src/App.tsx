@@ -1,33 +1,29 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useEffect, useState } from 'react'
+import AppRoutes from './routes/AppRoutes'
+import LoadingScreen from './pages/loading/LoadingScreen'
+import './pages/jobs/JobListPage.css'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [bootMinimumElapsed, setBootMinimumElapsed] = useState(false)
+  const [bootDataReady, setBootDataReady] = useState(false)
+  const [bootProgressDone, setBootProgressDone] = useState(false)
+  const [navigationLoading, setNavigationLoading] = useState(false)
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setBootMinimumElapsed(true), 700)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  const showBootLoader = !bootMinimumElapsed || !bootDataReady || !bootProgressDone
+  const showLoader = showBootLoader || navigationLoading
 
   return (
     <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
+      <AppRoutes
+        onInitialDataReady={() => setBootDataReady(true)}
+        onNavigationLoadingChange={(loading) => setNavigationLoading(loading)}
+      />
+      {showLoader && <LoadingScreen onProgressDone={() => setBootProgressDone(true)} />}
     </>
   )
 }
