@@ -16,7 +16,8 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://10.0.4.111:5000'
+const envBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
+export const API_BASE_URL = (envBaseUrl || '').replace(/\/+$/, '')
 
 function isLikelyHtml(payload: string): boolean {
   const trimmed = payload.trimStart()
@@ -34,13 +35,22 @@ function parseJsonSafely(raw: string): JsonObject | undefined {
 
 async function post<T>(url: string, payload: unknown): Promise<ApiSuccess<T>> {
   const requestUrl = `${API_BASE_URL}${url}`
-  const response = await fetch(requestUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  })
+  const backendLabel = API_BASE_URL || window.location.origin
+  let response: Response
+  try {
+    response = await fetch(requestUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+  } catch {
+    throw new ApiError(
+      `Unable to reach backend at ${backendLabel}. Ensure the API server is running and CORS allows ${window.location.origin}.`,
+      0
+    )
+  }
 
   const raw = await response.text()
   const parsed = parseJsonSafely(raw)

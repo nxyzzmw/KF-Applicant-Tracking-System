@@ -1,17 +1,17 @@
-import { ApiError } from '../../services/axiosInstance'
+import { API_BASE_URL, ApiError } from '../../services/axiosInstance'
 import axiosInstance from '../../services/axiosInstance'
 import type {
+  ForgotPasswordRequest,
+  ForgotPasswordResponse,
   LoginRequest,
   LoginResponse,
   RefreshTokenRequest,
-  RegisterRequest,
+  ResetPasswordRequest,
+  ResetPasswordResponse,
 } from './authTypes'
 
-const AUTH_API_BASE = '/api/auth'
-
-export async function register(payload: RegisterRequest): Promise<void> {
-  await axiosInstance.post(`${AUTH_API_BASE}/register`, payload)
-}
+const envAuthBase = import.meta.env.VITE_AUTH_API_BASE?.trim()
+const AUTH_API_BASE = (envAuthBase || '/api/auth').replace(/\/+$/, '')
 
 export async function login(payload: LoginRequest): Promise<LoginResponse> {
   const response = await axiosInstance.post<LoginResponse>(`${AUTH_API_BASE}/login`, payload)
@@ -23,8 +23,19 @@ export async function refreshToken(payload: RefreshTokenRequest): Promise<LoginR
   return response.data
 }
 
+export async function forgotPassword(payload: ForgotPasswordRequest): Promise<ForgotPasswordResponse> {
+  const response = await axiosInstance.post<ForgotPasswordResponse>(`${AUTH_API_BASE}/forgot-password`, payload)
+  return response.data
+}
+
+export async function resetPassword(payload: ResetPasswordRequest): Promise<ResetPasswordResponse> {
+  const response = await axiosInstance.post<ResetPasswordResponse>(`${AUTH_API_BASE}/reset-password`, payload)
+  return response.data
+}
+
 export function getApiErrorMessage(error: unknown): string {
   const fallback = 'Something went wrong. Please try again.'
+  const backendLabel = API_BASE_URL || window.location.origin
 
   if (error instanceof ApiError) {
     if (error.data && typeof error.data.message === 'string' && error.data.message) {
@@ -36,7 +47,7 @@ export function getApiErrorMessage(error: unknown): string {
 
   if (error instanceof Error && error.message) {
     if (error.message === 'Failed to fetch') {
-      return 'Unable to reach backend. Ensure the API server is running, the base URL is correct, and CORS allows this origin.'
+      return `Unable to reach backend at ${backendLabel}. Ensure the API server is running and CORS allows this origin.`
     }
     return error.message
   }
