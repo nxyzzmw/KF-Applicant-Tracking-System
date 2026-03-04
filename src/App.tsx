@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import AppRoutes from './routes/AppRoutes'
+import './App.css'
 import LoadingScreen from './pages/loading/LoadingScreen'
 import './pages/jobs/JobListPage.css'
+import AppRoutes from './routes/AppRoutes'
 
 function App() {
   const [bootMinimumElapsed, setBootMinimumElapsed] = useState(false)

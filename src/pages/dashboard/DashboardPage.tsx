@@ -137,102 +137,102 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
           </section>
 
           <section className="overview-grid">
-          <article className="overview-card">
-            <h3>
-              <span className="material-symbols-rounded">monitoring</span>
-              <span>Pipeline Status</span>
-            </h3>
-            <div className="status-split">
-              <div>
-                <span>Open</span>
-                <strong>{overview.openCount}</strong>
+            <article className="overview-card">
+              <h3>
+                <span className="material-symbols-rounded">monitoring</span>
+                <span>Pipeline Status</span>
+              </h3>
+              <div className="status-split">
+                <div>
+                  <span>Open</span>
+                  <strong>{overview.openCount}</strong>
+                </div>
+                <div>
+                  <span>On Hold</span>
+                  <strong>{overview.holdCount}</strong>
+                </div>
+                <div>
+                  <span>Closed</span>
+                  <strong>{overview.closedCount}</strong>
+                </div>
+                <div>
+                  <span>Filled</span>
+                  <strong>{overview.filledCount}</strong>
+                </div>
+                <div>
+                  <span>Canceled</span>
+                  <strong>{overview.cancelledCount}</strong>
+                </div>
               </div>
-              <div>
-                <span>On Hold</span>
-                <strong>{overview.holdCount}</strong>
-              </div>
-              <div>
-                <span>Closed</span>
-                <strong>{overview.closedCount}</strong>
-              </div>
-              <div>
-                <span>Filled</span>
-                <strong>{overview.filledCount}</strong>
-              </div>
-              <div>
-                <span>Canceled</span>
-                <strong>{overview.cancelledCount}</strong>
-              </div>
-            </div>
-            <p className="overview-note">
-              Pending openings: <strong>{overview.pendingOpenings}</strong> | Filled: <strong>{overview.totalFilled}</strong>
-            </p>
-          </article>
+              <p className="overview-note">
+                Pending openings: <strong>{overview.pendingOpenings}</strong> | Filled: <strong>{overview.totalFilled}</strong>
+              </p>
+            </article>
 
-          <article className="overview-card">
-            <h3>
-              <span className="material-symbols-rounded">notifications_active</span>
-              <span>Priority Alerts</span>
-            </h3>
-            <ul className="overview-list">
-              {overview.urgentAging.length === 0 &&
-                overview.upcomingClosures.length === 0 &&
-                overview.overdueClosures.length === 0 &&
-                overview.missingTargetDates.length === 0 && (
-                <li className="overview-list__empty">No urgent alerts right now.</li>
-              )}
-              {overview.overdueClosures.map((job) => (
-                <li key={`overdue-${job.id}`}>
-                  <span className="material-symbols-rounded">error</span>
-                  <span>
-                    <strong>{job.title}</strong> closure overdue since {formatShortDate(job.targetClosureDate)}
-                  </span>
-                </li>
-              ))}
-              {overview.urgentAging.slice(0, 3).map((job) => (
-                <li key={`urgent-${job.id}`}>
-                  <span className="material-symbols-rounded">warning</span>
-                  <span>
-                    <strong>{job.title}</strong> is open for {job.agingDays} days
-                  </span>
-                </li>
-              ))}
-              {overview.upcomingClosures.map((job) => (
-                <li key={`closure-${job.id}`}>
-                  <span className="material-symbols-rounded">event_upcoming</span>
-                  <span>
-                    <strong>{job.title}</strong> closes on {formatShortDate(job.targetClosureDate)}
-                  </span>
-                </li>
-              ))}
-              {overview.missingTargetDates.map((job) => (
-                <li key={`missing-target-${job.id}`}>
-                  <span className="material-symbols-rounded">event_busy</span>
-                  <span>
-                    <strong>{job.title}</strong> has no target closure date
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </article>
+            <article className="overview-card">
+              <h3>
+                <span className="material-symbols-rounded">notifications_active</span>
+                <span>Priority Alerts</span>
+              </h3>
+              <ul className="overview-list">
+                {overview.urgentAging.length === 0 &&
+                  overview.upcomingClosures.length === 0 &&
+                  overview.overdueClosures.length === 0 &&
+                  overview.missingTargetDates.length === 0 && (
+                    <li className="overview-list__empty">No urgent alerts right now.</li>
+                  )}
+                {overview.overdueClosures.map((job) => (
+                  <li key={`overdue-${job.id}`}>
+                    <span className="material-symbols-rounded">error</span>
+                    <span>
+                      <strong>{job.title}</strong> closure overdue since {formatShortDate(job.targetClosureDate)}
+                    </span>
+                  </li>
+                ))}
+                {overview.urgentAging.slice(0, 3).map((job) => (
+                  <li key={`urgent-${job.id}`}>
+                    <span className="material-symbols-rounded">warning</span>
+                    <span>
+                      <strong>{job.title}</strong> is open for {job.agingDays} days
+                    </span>
+                  </li>
+                ))}
+                {overview.upcomingClosures.map((job) => (
+                  <li key={`closure-${job.id}`}>
+                    <span className="material-symbols-rounded">event_upcoming</span>
+                    <span>
+                      <strong>{job.title}</strong> closes on {formatShortDate(job.targetClosureDate)}
+                    </span>
+                  </li>
+                ))}
+                {overview.missingTargetDates.map((job) => (
+                  <li key={`missing-target-${job.id}`}>
+                    <span className="material-symbols-rounded">event_busy</span>
+                    <span>
+                      <strong>{job.title}</strong> has no target closure date
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </article>
 
-          <article className="overview-card">
-            <h3>
-              <span className="material-symbols-rounded">domain</span>
-              <span>Department Workload</span>
-            </h3>
-            <ul className="overview-list overview-list--compact">
-              {overview.departments.length === 0 && <li className="overview-list__empty">No department data yet.</li>}
-              {overview.departments.map((item) => (
-                <li key={item.department}>
-                  <span>{item.department}</span>
-                  <span>
-                    {item.openings} openings across {item.roles} roles
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </article>
+            <article className="overview-card">
+              <h3>
+                <span className="material-symbols-rounded">domain</span>
+                <span>Department Workload</span>
+              </h3>
+              <ul className="overview-list overview-list--compact">
+                {overview.departments.length === 0 && <li className="overview-list__empty">No department data yet.</li>}
+                {overview.departments.map((item) => (
+                  <li key={item.department}>
+                    <span>{item.department}</span>
+                    <span>
+                      {item.openings} openings across {item.roles} roles
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </article>
           </section>
         </>
       )}
