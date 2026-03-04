@@ -9,14 +9,15 @@ type ForgotPasswordPageProps = {
   initialToken?: string
 }
 
-type Step = 'email' | 'new-password'
+type Step = 'email' | 'otp' | 'new-password'
 
 function ForgotPasswordPage({ onBackToSignIn, onSuccess, initialEmail = '', initialToken = '' }: ForgotPasswordPageProps) {
-  const [step, setStep] = useState<Step>(initialEmail || initialToken ? 'new-password' : 'email')
-  const [loading, setLoading] = useState<'email' | 'new-password' | null>(null)
+  const [step, setStep] = useState<Step>(initialToken ? 'new-password' : initialEmail ? 'otp' : 'email')
+  const [loading, setLoading] = useState<'email' | 'otp' | 'new-password' | null>(null)
 
   const [email, setEmail] = useState(initialEmail)
   const [token, setToken] = useState(initialToken)
+  const [otp, setOtp] = useState(initialToken)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
 
@@ -52,8 +53,29 @@ function ForgotPasswordPage({ onBackToSignIn, onSuccess, initialEmail = '', init
       setInfo(response.message)
       setDevResetUrl(response.resetUrl || '')
       setEmail(normalizedEmail)
+      setOtp('')
+      setToken('')
+      setStep('otp')
     } catch (requestError) {
       setError(getApiErrorMessage(requestError))
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  async function handleVerifyOtp(): Promise<void> {
+    const normalizedOtp = otp.trim()
+    if (normalizedOtp.length < 4) {
+      setError('Please enter the OTP sent to your email.')
+      return
+    }
+
+    try {
+      setLoading('otp')
+      setError('')
+      setInfo('OTP verified. Set your new password.')
+      setToken(normalizedOtp)
+      setStep('new-password')
     } finally {
       setLoading(null)
     }
@@ -63,7 +85,7 @@ function ForgotPasswordPage({ onBackToSignIn, onSuccess, initialEmail = '', init
     const normalizedEmail = email.trim().toLowerCase()
 
     if (!normalizedEmail || !token.trim()) {
-      setError('Email and reset token are required.')
+      setError('Email and verified OTP are required.')
       return
     }
 
@@ -102,14 +124,25 @@ function ForgotPasswordPage({ onBackToSignIn, onSuccess, initialEmail = '', init
       <button
         type="button"
         className="back-btn"
-        onClick={step === 'email' ? onBackToSignIn : () => setStep('email')}
+        onClick={() => {
+          if (step === 'email') {
+            onBackToSignIn()
+            return
+          }
+          if (step === 'otp') {
+            setStep('email')
+            return
+          }
+          setStep('otp')
+        }}
       >
         <span aria-hidden="true">←</span>
         {step === 'email' ? 'Back to sign in' : 'Back'}
       </button>
 
       <div className="progress-row">
-        <div className={`progress-line ${step === 'email' || step === 'new-password' ? 'progress-line-active' : ''}`} />
+        <div className={`progress-line ${step === 'email' || step === 'otp' || step === 'new-password' ? 'progress-line-active' : ''}`} />
+        <div className={`progress-line ${step === 'otp' || step === 'new-password' ? 'progress-line-active' : ''}`} />
         <div className={`progress-line ${step === 'new-password' ? 'progress-line-active' : ''}`} />
       </div>
 
@@ -119,9 +152,9 @@ function ForgotPasswordPage({ onBackToSignIn, onSuccess, initialEmail = '', init
       {step === 'email' && (
         <>
           <div className="form-header">
-            <div className="form-eyebrow">Step 1 of 2 - Account recovery</div>
+            <div className="form-eyebrow">Step 1 of 3 - Account recovery</div>
             <h2 className="form-title">Reset your password</h2>
-            <p className="form-desc">Enter your work email and we&apos;ll send you a secure reset link.</p>
+            <p className="form-desc">Enter your work email and we&apos;ll send you an OTP code.</p>
           </div>
 
           <div className="input-group">
@@ -144,18 +177,11 @@ function ForgotPasswordPage({ onBackToSignIn, onSuccess, initialEmail = '', init
             onClick={handleSendResetLink}
             disabled={loading === 'email'}
           >
-            <span className="btn-text">Send reset link</span>
+            <span className="btn-text">Send OTP</span>
             <span className="btn-spinner">
               <span className="spinner-ring" />
             </span>
           </button>
-
-          <p className="otp-resend-text">
-            Already have a reset token?{' '}
-            <button type="button" className="link-btn" onClick={() => setStep('new-password')}>
-              Reset password now
-            </button>
-          </p>
 
           {devResetUrl && (
             <p className="otp-resend-text">
@@ -168,12 +194,58 @@ function ForgotPasswordPage({ onBackToSignIn, onSuccess, initialEmail = '', init
         </>
       )}
 
+      {step === 'otp' && (
+        <>
+          <div className="form-header">
+            <div className="form-eyebrow">Step 2 of 3 - Verify OTP</div>
+            <h2 className="form-title">Enter verification code</h2>
+            <p className="form-desc">
+              Enter the OTP sent to <strong>{email}</strong>.
+            </p>
+          </div>
+
+          <div className="input-group">
+            <label htmlFor="reset-otp">OTP code</label>
+            <div className="input-wrap">
+              <input
+                id="reset-otp"
+                type="text"
+                className="otp-input"
+                placeholder="Enter OTP"
+                value={otp}
+                onChange={(event) => setOtp(event.target.value.replace(/\s+/g, ''))}
+                autoComplete="one-time-code"
+              />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className={`btn-primary ${loading === 'otp' ? 'loading' : ''}`}
+            onClick={handleVerifyOtp}
+            disabled={loading === 'otp'}
+          >
+            <span className="btn-text">Verify OTP</span>
+            <span className="btn-spinner">
+              <span className="spinner-ring" />
+            </span>
+          </button>
+
+          <p className="otp-resend-text">
+            Didn&apos;t receive code?{' '}
+            <button type="button" className="link-btn" onClick={() => void handleSendResetLink()}>
+              Resend OTP
+            </button>
+          </p>
+        </>
+      )}
+
       {step === 'new-password' && (
         <>
           <div className="form-header">
-            <div className="form-eyebrow">Step 2 of 2 - Set new password</div>
+            <div className="form-eyebrow">Step 3 of 3 - Set new password</div>
             <h2 className="form-title">Create new password</h2>
-            <p className="form-desc">Paste the reset token from email and set your new password.</p>
+            <p className="form-desc">Set a new password for your account.</p>
           </div>
 
           <div className="input-group">
@@ -186,20 +258,6 @@ function ForgotPasswordPage({ onBackToSignIn, onSuccess, initialEmail = '', init
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 autoComplete="email"
-              />
-            </div>
-          </div>
-
-          <div className="input-group">
-            <label htmlFor="reset-token">Reset token</label>
-            <div className="input-wrap">
-              <input
-                id="reset-token"
-                type="text"
-                placeholder="Paste reset token"
-                value={token}
-                onChange={(event) => setToken(event.target.value)}
-                autoComplete="off"
               />
             </div>
           </div>

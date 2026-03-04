@@ -79,10 +79,6 @@ function LoginPage({ onForgotPassword, onSignInSuccess }: LoginPageProps) {
       </div>
 
       <div className="form-extras">
-        <div className="remember-row">
-          <input type="checkbox" id="remember" />
-          <label htmlFor="remember">Remember me</label>
-        </div>
         <button type="button" className="link-btn" onClick={onForgotPassword}>
           Forgot password?
         </button>
