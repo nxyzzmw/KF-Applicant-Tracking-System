@@ -3,6 +3,11 @@ import { calculateAgingDays } from '../../utils/agingCalculator'
 import type { JobApiRecord, JobRecord, JobStatus } from './jobTypes'
 
 type JobsListResponse = JobApiRecord[] | { data?: JobApiRecord[]; jobs?: JobApiRecord[] } | null | undefined
+export type JobsQueryParams = {
+  search?: string
+  department?: string
+  status?: JobStatus
+}
 
 function normalizeStatus(status?: string): JobStatus {
   const value = (status ?? '').trim().toLowerCase()
@@ -41,6 +46,10 @@ function fallbackReqId(jobId?: string): string {
 function normalizeJob(apiJob: JobApiRecord): JobRecord {
   const openings = toNumber(apiJob.numberOfOpenings ?? apiJob.openings ?? apiJob.totalOpenings ?? apiJob.openPositions, 0)
   const filled = toNumber(apiJob.filled ?? apiJob.filledCount, 0)
+  const candidatesApplied = toNumber(
+    apiJob.applicantsCount ?? apiJob.candidateCount ?? apiJob.totalApplicants ?? apiJob.appliedCandidates,
+    0,
+  )
   const agingDays = toNumber(apiJob.agingDays, calculateAgingDays(apiJob.createdAt))
   const salary = parseSalaryRange(apiJob.salaryRange)
 
@@ -63,6 +72,7 @@ function normalizeJob(apiJob: JobApiRecord): JobRecord {
     description: apiJob.description,
     skillsRequired: Array.isArray(apiJob.skillsRequired) ? apiJob.skillsRequired : [],
     agingDays,
+    candidatesApplied,
   }
 }
 
@@ -72,8 +82,15 @@ function extractJobs(payload: JobsListResponse): JobApiRecord[] {
   return payload.data ?? payload.jobs ?? []
 }
 
-export async function getJobs(): Promise<JobRecord[]> {
-  const response = await apiRequest<JobsListResponse>('/jobs')
+export async function getJobs(query: JobsQueryParams = {}): Promise<JobRecord[]> {
+  const params = new URLSearchParams()
+  if (query.search && query.search.trim().length > 0) params.set('search', query.search.trim())
+  if (query.department && query.department.trim().length > 0) params.set('department', query.department.trim())
+  if (query.status && query.status.trim().length > 0) params.set('status', query.status)
+  const queryString = params.toString()
+  const path = queryString.length > 0 ? `/jobs?${queryString}` : '/jobs'
+
+  const response = await apiRequest<JobsListResponse>(path)
   return extractJobs(response).map(normalizeJob).filter((job) => job.id.length > 0)
 }
 

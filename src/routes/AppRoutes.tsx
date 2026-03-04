@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Layout from '../components/layout/Layout'
 import appLogo from '../assets/kf-logo.png'
 import { apiRequest } from '../services/axiosInstance'
 import { createJob, deleteJob, getJobById, getJobs, updateJob, updateJobStatus } from '../features/jobs/jobsAPI'
-import type { JobFormValues, JobRecord, JobStatus } from '../features/jobs/jobTypes'
+import type { JobFormValues, JobRecord } from '../features/jobs/jobTypes'
 import { toApiDateValue } from '../utils/dateUtils'
 import CreateJobPage from '../pages/jobs/CreateJobPage'
 import EditJobPage from '../pages/jobs/EditJobPage'
 import JobDetailsPage from '../pages/jobs/JobDetailsPage'
 import JobListPage from '../pages/jobs/JobListPage'
+import DashboardPage from '../pages/dashboard/DashboardPage'
+import type { JobsQueryParams } from '../features/jobs/jobsAPI'
+import type { HeaderAlertItem } from '../components/layout/Header'
 
-type JobView = 'list' | 'create' | 'details' | 'edit'
+type JobView = 'dashboard' | 'list' | 'create' | 'details' | 'edit'
 type AppRoutesProps = {
   onInitialDataReady?: () => void
   onNavigationLoadingChange?: (loading: boolean) => void
@@ -23,26 +26,46 @@ type UserProfileResponse = {
   }
 }
 
+type AlertsResponse =
+  | HeaderAlertItem[]
+  | { data?: HeaderAlertItem[]; alerts?: HeaderAlertItem[] }
+  | null
+  | undefined
+
 const AUTH_ME_ENDPOINT = import.meta.env.VITE_AUTH_ME_ENDPOINT ?? ''
 
-function nextStatus(status: JobStatus): JobStatus {
-  if (status === 'Open') return 'On Hold'
-  if (status === 'On Hold') return 'Closed'
-  return 'Open'
+function randomToken(length: number): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(length)
+    crypto.getRandomValues(bytes)
+    return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join('')
+  }
+  return Array.from({ length }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('')
 }
 
-function generateTempReqId(): string {
+function generateUniqueReqId(existingReqIds: Set<string>): string {
   const now = new Date()
-  const yy = String(now.getFullYear()).slice(-2)
+  const yyyy = String(now.getFullYear())
   const mm = String(now.getMonth() + 1).padStart(2, '0')
   const dd = String(now.getDate()).padStart(2, '0')
-  const rand = String(Math.floor(Math.random() * 1000)).padStart(3, '0')
-  return `REQ-${yy}${mm}${dd}-${rand}`
+  const hh = String(now.getHours()).padStart(2, '0')
+  const min = String(now.getMinutes()).padStart(2, '0')
+  const ss = String(now.getSeconds()).padStart(2, '0')
+  const ms = String(now.getMilliseconds()).padStart(3, '0')
+
+  // Retry until not present in loaded jobs list.
+  // The timestamp + 6-char token already makes collisions highly unlikely.
+  while (true) {
+    const candidate = `REQ-${yyyy}${mm}${dd}-${hh}${min}${ss}${ms}-${randomToken(6)}`
+    if (!existingReqIds.has(candidate.toUpperCase())) return candidate
+  }
 }
 
-function toApiPayload(values: JobFormValues) {
-  const salaryRange = `${Number(values.salaryMin) || 0}-${Number(values.salaryMax) || 0}`
-  const reqId = generateTempReqId()
+function toApiPayload(values: JobFormValues, reqId?: string) {
+  const salaryMin = Number(values.salaryMin) || 0
+  const salaryMax = Number(values.salaryMax) || 0
+  const salaryRange = salaryMin >= 7 && salaryMax === salaryMin ? `${salaryMin}+` : `${salaryMin}-${salaryMax}`
   const skillsRequired = values.skills
     .split(',')
     .map((skill) => skill.trim())
@@ -60,13 +83,12 @@ function toApiPayload(values: JobFormValues) {
     targetClosureDate: toApiDateValue(values.targetClosureDate),
     description: values.description,
     skillsRequired,
-    reqId,
-    requisitionId: reqId,
+    ...(reqId ? { reqId, requisitionId: reqId } : {}),
   }
 }
 
 function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesProps) {
-  const [view, setView] = useState<JobView>('list')
+  const [view, setView] = useState<JobView>('dashboard')
   const [jobs, setJobs] = useState<JobRecord[]>([])
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [selectedJob, setSelectedJob] = useState<JobRecord | null>(null)
@@ -77,7 +99,17 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
   const [actionError, setActionError] = useState<string | null>(null)
   const [busyJobId, setBusyJobId] = useState<string | null>(null)
   const [sidebarRole, setSidebarRole] = useState<string>('HR Recruiter')
+  const [jobListSearchTerm, setJobListSearchTerm] = useState('')
+  const [jobListDepartmentFilter, setJobListDepartmentFilter] = useState('all')
+  const [jobListStatusFilter, setJobListStatusFilter] = useState<'all' | JobRecord['status']>('all')
+  const [alerts, setAlerts] = useState<HeaderAlertItem[]>([])
+  const [alertsLoading, setAlertsLoading] = useState(false)
+  const [alertsError, setAlertsError] = useState<string | null>(null)
+  const [alertPermission, setAlertPermission] = useState<NotificationPermission | 'unsupported'>(
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported',
+  )
   const hasReportedInitialLoadRef = useRef(false)
+  const loadJobsRequestIdRef = useRef(0)
 
   const navigateTo = useCallback((nextView: JobView) => {
     onNavigationLoadingChange?.(true)
@@ -86,27 +118,119 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     window.setTimeout(() => onNavigationLoadingChange?.(false), 520)
   }, [onNavigationLoadingChange])
 
-  const loadJobs = useCallback(async () => {
+  const loadJobs = useCallback(async (query: JobsQueryParams = {}) => {
+    const requestId = loadJobsRequestIdRef.current + 1
+    loadJobsRequestIdRef.current = requestId
     setLoading(true)
     setListError(null)
     try {
-      const result = await getJobs()
-      setJobs(result)
+      const result = await getJobs(query)
+      if (loadJobsRequestIdRef.current === requestId) {
+        setJobs(result)
+      }
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : 'Unable to load jobs'
-      setListError(message)
+      if (loadJobsRequestIdRef.current === requestId) {
+        setListError(message)
+      }
     } finally {
-      setLoading(false)
-      if (!hasReportedInitialLoadRef.current) {
-        onInitialDataReady?.()
-        hasReportedInitialLoadRef.current = true
+      if (loadJobsRequestIdRef.current === requestId) {
+        setLoading(false)
+        if (!hasReportedInitialLoadRef.current) {
+          onInitialDataReady?.()
+          hasReportedInitialLoadRef.current = true
+        }
       }
     }
   }, [onInitialDataReady])
 
+  const activeListQuery = useMemo<JobsQueryParams>(() => ({
+    search: jobListSearchTerm.trim() || undefined,
+    department: jobListDepartmentFilter === 'all' ? undefined : jobListDepartmentFilter,
+    status: jobListStatusFilter === 'all' ? undefined : jobListStatusFilter,
+  }), [jobListSearchTerm, jobListDepartmentFilter, jobListStatusFilter])
+
   useEffect(() => {
-    void loadJobs()
-  }, [loadJobs])
+    if (view === 'dashboard') {
+      void loadJobs()
+      return
+    }
+    if (view !== 'list') return
+
+    const timer = window.setTimeout(() => {
+      void loadJobs(activeListQuery)
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [view, activeListQuery, loadJobs])
+
+  const fallbackAlerts = useMemo<HeaderAlertItem[]>(() => {
+    const nowIso = new Date().toISOString()
+    return jobs
+      .filter((job) => job.status === 'Open' || job.status === 'On Hold')
+      .map((job) => {
+        const title = `${job.title} (${job.reqId})`
+        return {
+          id: `job-${job.id}`,
+          title: `Job Aging: ${title}`,
+          message: job.targetClosureDate
+            ? `Target closure date is ${job.targetClosureDate}.`
+            : 'No target closure date set.',
+          createdAt: nowIso,
+          read: false,
+        }
+      })
+      .slice(0, 20)
+  }, [jobs])
+
+  const loadAlerts = useCallback(async () => {
+    setAlertsLoading(true)
+    setAlertsError(null)
+    try {
+      const response = await apiRequest<AlertsResponse>('/alerts')
+      const payload = Array.isArray(response) ? response : (response?.data ?? response?.alerts ?? [])
+      const normalized = payload.map((alert, index) => ({
+        id: alert.id || `alert-${index}`,
+        title: alert.title || 'Alert',
+        message: alert.message || 'No details provided.',
+        createdAt: alert.createdAt || new Date().toISOString(),
+        read: Boolean(alert.read),
+      }))
+      setAlerts(normalized)
+    } catch {
+      setAlerts(fallbackAlerts)
+      setAlertsError('Alerts API unavailable. Showing fallback alerts.')
+    } finally {
+      setAlertsLoading(false)
+    }
+  }, [fallbackAlerts])
+
+  useEffect(() => {
+    void loadAlerts()
+  }, [loadAlerts])
+
+  const requestAlertPermission = useCallback(async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setAlertPermission('unsupported')
+      return
+    }
+    const permission = await Notification.requestPermission()
+    setAlertPermission(permission)
+  }, [])
+
+  useEffect(() => {
+    if (alertPermission !== 'granted') return
+    const unread = alerts.filter((alert) => !alert.read).length
+    if (unread === 0) return
+
+    const todayKey = `ats-alert-notified-${new Date().toISOString().slice(0, 10)}`
+    if (localStorage.getItem(todayKey) === '1') return
+
+    new Notification('ATS Daily Alerts', {
+      body: `You have ${unread} unread alerts to review in the header alerts panel.`,
+      tag: 'ats-daily-alerts',
+    })
+    localStorage.setItem(todayKey, '1')
+  }, [alertPermission, alerts])
 
   useEffect(() => {
     if (!AUTH_ME_ENDPOINT) return
@@ -158,7 +282,10 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     setSaving(true)
     setActionError(null)
     try {
-      const created = await createJob(toApiPayload(values))
+      const allJobs = await getJobs()
+      const existingReqIds = new Set(allJobs.map((job) => job.reqId.trim().toUpperCase()).filter(Boolean))
+      const reqId = generateUniqueReqId(existingReqIds)
+      const created = await createJob(toApiPayload(values, reqId))
       await loadJobs()
       setSelectedJobId(created.id)
       setSelectedJob(created)
@@ -194,7 +321,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     setActionError(null)
     try {
       await deleteJob(jobId)
-      await loadJobs()
+      await loadJobs(view === 'list' ? activeListQuery : {})
       if (selectedJobId === jobId) {
         setSelectedJobId(null)
         setSelectedJob(null)
@@ -206,14 +333,14 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     } finally {
       setBusyJobId(null)
     }
-  }, [loadJobs, navigateTo, selectedJobId])
+  }, [activeListQuery, loadJobs, navigateTo, selectedJobId, view])
 
-  const handleStatusChange = useCallback(async (job: JobRecord) => {
+  const handleStatusChange = useCallback(async (job: JobRecord, status: JobRecord['status']) => {
     setBusyJobId(job.id)
     setActionError(null)
     try {
-      const updated = await updateJobStatus(job.id, nextStatus(job.status))
-      setJobs((prev) => prev.map((item) => (item.id === job.id ? updated : item)))
+      const updated = await updateJobStatus(job.id, status)
+      await loadJobs(view === 'list' ? activeListQuery : {})
       if (selectedJobId === job.id) setSelectedJob(updated)
     } catch (statusError) {
       const message = statusError instanceof Error ? statusError.message : 'Unable to update job status'
@@ -221,7 +348,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     } finally {
       setBusyJobId(null)
     }
-  }, [selectedJobId])
+  }, [activeListQuery, loadJobs, selectedJobId, view])
 
   const openDetails = useCallback((jobId: string) => {
     setSelectedJobId(jobId)
@@ -246,18 +373,53 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
   }, [])
 
   return (
-    <Layout onShowJobs={() => navigateTo('list')} logoSrc={appLogo} role={sidebarRole} onLogout={handleLogout}>
+    <Layout
+      onShowJobs={() => navigateTo('list')}
+      onShowDashboard={() => navigateTo('dashboard')}
+      activeNav={view === 'dashboard' ? 'dashboard' : 'jobs'}
+      logoSrc={appLogo}
+      role={sidebarRole}
+      onLogout={handleLogout}
+      alerts={alerts}
+      alertsLoading={alertsLoading}
+      alertsError={alertsError}
+      alertPermission={alertPermission}
+      onRetryAlerts={() => void loadAlerts()}
+      onRequestAlertPermission={() => void requestAlertPermission()}
+      onMarkAlertRead={(alertId) => setAlerts((prev) => prev.map((alert) => (alert.id === alertId ? { ...alert, read: true } : alert)))}
+      onClearReadAlerts={() => setAlerts((prev) => prev.filter((alert) => !alert.read))}
+      onClearAllAlerts={() => setAlerts([])}
+    >
+      {view === 'dashboard' && (
+        <DashboardPage
+          jobs={jobs}
+          loading={loading}
+          error={listError}
+          onRetry={() => void loadJobs()}
+        />
+      )}
       {view === 'list' && (
         <JobListPage
           jobs={jobs}
           loading={loading}
           error={listError}
-          onRetry={() => void loadJobs()}
+          searchTerm={jobListSearchTerm}
+          departmentFilter={jobListDepartmentFilter}
+          statusFilter={jobListStatusFilter}
+          onSearchTermChange={setJobListSearchTerm}
+          onDepartmentFilterChange={setJobListDepartmentFilter}
+          onStatusFilterChange={setJobListStatusFilter}
+          onClearFilters={() => {
+            setJobListSearchTerm('')
+            setJobListDepartmentFilter('all')
+            setJobListStatusFilter('all')
+          }}
+          onRetry={() => void loadJobs(activeListQuery)}
           onCreate={() => navigateTo('create')}
           onView={openDetails}
           onEdit={openEdit}
           onDelete={(jobId) => void handleDelete(jobId)}
-          onStatusChange={(job) => void handleStatusChange(job)}
+          onStatusChange={(job, status) => void handleStatusChange(job, status)}
           busyJobId={busyJobId}
         />
       )}

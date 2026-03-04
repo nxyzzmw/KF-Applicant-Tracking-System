@@ -1,5 +1,7 @@
 type SidebarProps = {
   onJobsClick?: () => void
+  onDashboardClick?: () => void
+  activeNav: 'dashboard' | 'jobs'
   logoSrc?: string
   collapsed: boolean
   onToggleCollapse: () => void
@@ -7,7 +9,7 @@ type SidebarProps = {
   onLogout?: () => void
 }
 
-function Sidebar({ onJobsClick, logoSrc, collapsed, onToggleCollapse, role, onLogout }: SidebarProps) {
+function Sidebar({ onJobsClick, onDashboardClick, activeNav, logoSrc, collapsed, onToggleCollapse, role, onLogout }: SidebarProps) {
   const roleLabel = role?.trim() || 'HR Recruiter'
 
   return (
@@ -24,11 +26,11 @@ function Sidebar({ onJobsClick, logoSrc, collapsed, onToggleCollapse, role, onLo
       </div>
 
       <nav className="jm-nav" aria-label="Main">
-        <button type="button" className="jm-nav__item">
+        <button type="button" className={`jm-nav__item ${activeNav === 'dashboard' ? 'is-active' : ''}`} onClick={onDashboardClick}>
           <span className="material-symbols-rounded nav-icon">dashboard</span>
           <span className="nav-label">Dashboard</span>
         </button>
-        <button type="button" className="jm-nav__item is-active" onClick={onJobsClick}>
+        <button type="button" className={`jm-nav__item ${activeNav === 'jobs' ? 'is-active' : ''}`} onClick={onJobsClick}>
           <span className="material-symbols-rounded nav-icon">work</span>
           <span className="nav-label">Jobs</span>
         </button>

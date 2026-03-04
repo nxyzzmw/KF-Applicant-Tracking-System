@@ -290,6 +290,95 @@
   font-size: 18px;
 }
 
+.alerts-menu {
+  position: relative;
+}
+
+.alerts-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--error);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: var(--font-weight-heading-bold);
+  padding: 0 0.3rem;
+}
+
+.alerts-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: min(460px, calc(100vw - 2rem));
+  max-height: 460px;
+  overflow: auto;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+  padding: 0.75rem;
+  z-index: 20;
+}
+
+.alerts-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.alerts-panel__head h4 {
+  margin: 0;
+}
+
+.alerts-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.6rem 0;
+}
+
+.alerts-panel__status {
+  margin: 0.4rem 0 0.65rem;
+  color: var(--text-muted-2);
+}
+
+.alerts-panel__status--error {
+  color: var(--error);
+}
+
+.alerts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.alerts-list li {
+  border: 1px solid var(--grid-lines);
+  border-radius: 10px;
+  padding: 0.55rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.alerts-list li.is-read {
+  opacity: 0.78;
+}
+
+.alerts-list li p {
+  margin: 0.25rem 0;
+  color: var(--text-muted-2);
+}
+
+.alerts-list li small {
+  color: var(--text-muted-2);
+}
+
 .profile-badge {
   width: 40px;
   height: 40px;
@@ -339,6 +428,10 @@
 }
 
 .primary-btn {
+  color: #ffffff;
+}
+
+.primary-btn span {
   color: #ffffff;
 }
 
@@ -396,7 +489,7 @@ input::placeholder {
 
 .skeleton-row {
   display: grid;
-  grid-template-columns: 1.7fr 1fr 1fr 1.2fr 1fr 1.3fr;
+  grid-template-columns: 1.7fr 1fr 1fr 1.2fr 1fr 1fr 1.3fr;
   gap: 0.8rem;
 }
 
@@ -467,6 +560,11 @@ input::placeholder {
   gap: 0.4rem;
 }
 
+.empty-state .primary-btn,
+.empty-state .primary-btn span {
+  color: #ffffff;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -480,12 +578,26 @@ thead th {
   color: var(--text-muted-2);
   border-bottom: 1px solid var(--border-default);
   padding: 1rem;
+  white-space: nowrap;
 }
 
 tbody td {
   padding: 1rem;
   border-bottom: 1px solid var(--grid-lines);
   vertical-align: middle;
+}
+
+thead th.actions-head {
+  text-align: right;
+}
+
+thead th:nth-child(3),
+thead th:nth-child(5),
+thead th:nth-child(6),
+tbody td:nth-child(3),
+tbody td:nth-child(5),
+tbody td:nth-child(6) {
+  text-align: center;
 }
 
 tbody td span {
@@ -552,6 +664,7 @@ tbody td span {
   display: flex;
   gap: 0.4rem;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .table-action {
@@ -585,6 +698,32 @@ tbody td span {
 
 .table-action--danger {
   color: var(--error);
+}
+
+.table-action--status {
+  min-width: 120px;
+  background: #ffffff;
+  font-weight: var(--font-weight-body-semibold);
+}
+
+.table-action--status.is-open {
+  color: #34d46d;
+}
+
+.table-action--status.is-hold {
+  color: #f5be3d;
+}
+
+.table-action--status.is-closed {
+  color: #90a4c0;
+}
+
+.table-action--status.is-filled {
+  color: #0f766e;
+}
+
+.table-action--status.is-cancelled {
+  color: #b91c1c;
 }
 
 .table-footer {
@@ -621,7 +760,7 @@ tbody td span {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
 }
 
@@ -691,6 +830,13 @@ tbody td span {
 .overview-card h3 .material-symbols-rounded {
   font-size: 20px;
   color: var(--accent-royal-blue);
+}
+
+.overview-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
 }
 
 .status-split {
@@ -1046,6 +1192,26 @@ textarea {
   color: var(--text-muted-2);
 }
 
+.job-description-list {
+  list-style: none;
+  margin: 0.9rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.job-description-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  border-bottom: 1px solid var(--grid-lines);
+  padding-bottom: 0.45rem;
+}
+
+.job-description-list li span {
+  color: var(--text-muted-2);
+}
+
 .progress-block p {
   margin: 1rem 0 0.5rem;
 }
@@ -1132,7 +1298,7 @@ textarea {
   }
 
   .skeleton-row {
-    min-width: 920px;
+    min-width: 1080px;
   }
 
 }

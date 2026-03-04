@@ -40,6 +40,22 @@ function JobDetailsPage({ job, loading, error, onBack, onEdit }: JobDetailsPageP
         <article className="editor-card">
           <h3>Job Description</h3>
           <p>{job.description || 'No description provided by the recruiter yet.'}</p>
+          <ul className="job-description-list">
+            <li>
+              <span>Candidates Applied</span>
+              <strong>{job.candidatesApplied}</strong>
+            </li>
+            <li>
+              <span>Filled Positions</span>
+              <strong>
+                {job.filled} / {job.openings}
+              </strong>
+            </li>
+            <li>
+              <span>Pipeline Pending</span>
+              <strong>{Math.max(job.candidatesApplied - job.filled, 0)}</strong>
+            </li>
+          </ul>
         </article>
         <article className="editor-card">
           <h3>Quick Stats</h3>

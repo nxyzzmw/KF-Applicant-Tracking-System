@@ -11,6 +11,21 @@ type EditJobPageProps = {
   onSubmit: (values: JobFormValues) => Promise<void>
 }
 
+type SalaryOption = {
+  value: string
+  label: string
+  min: string
+  max: string
+}
+
+const SALARY_OPTIONS: SalaryOption[] = [
+  { value: '2-3', label: '2-3 (Annual)', min: '2', max: '3' },
+  { value: '3-4', label: '3-4 (Annual)', min: '3', max: '4' },
+  { value: '4-5', label: '4-5 (Annual)', min: '4', max: '5' },
+  { value: '5-7', label: '5-7 (Annual)', min: '5', max: '7' },
+  { value: '7+', label: '7+ (Annual)', min: '7', max: '7' },
+]
+
 function toFormValues(job: JobRecord): JobFormValues {
   return {
     title: job.title,
@@ -41,6 +56,8 @@ function EditJobPage({ job, loading, saving, error, onBack, onSubmit }: EditJobP
 
   if (loading || !form) return <p className="panel-message">Loading job details...</p>
   if (!job) return <p className="panel-message panel-message--error">Job not found.</p>
+
+  const selectedSalaryRange = SALARY_OPTIONS.find((option) => option.min === form.salaryMin && option.max === form.salaryMax)?.value ?? ''
 
   return (
     <form className="job-editor" onSubmit={(event) => { event.preventDefault(); void onSubmit(form) }}>
@@ -110,12 +127,22 @@ function EditJobPage({ job, loading, saving, error, onBack, onSubmit }: EditJobP
               </select>
             </div>
             <div className="field">
-              <label>Salary Min</label>
-              <input type="number" value={form.salaryMin} onChange={(event) => updateField('salaryMin', event.target.value)} />
-            </div>
-            <div className="field">
-              <label>Salary Max</label>
-              <input type="number" value={form.salaryMax} onChange={(event) => updateField('salaryMax', event.target.value)} />
+              <label>Salary Range (Annual)</label>
+              <select
+                value={selectedSalaryRange}
+                onChange={(event) => {
+                  const selected = SALARY_OPTIONS.find((option) => option.value === event.target.value)
+                  updateField('salaryMin', selected?.min ?? '')
+                  updateField('salaryMax', selected?.max ?? '')
+                }}
+              >
+                <option value="">Select salary range</option>
+                {SALARY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           <div className="field">

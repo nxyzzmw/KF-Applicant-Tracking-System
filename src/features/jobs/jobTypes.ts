@@ -27,6 +27,10 @@ export type JobApiRecord = {
   skillsRequired?: string[]
   createdAt?: string
   agingDays?: number
+  applicantsCount?: number
+  candidateCount?: number
+  totalApplicants?: number
+  appliedCandidates?: number
 }
 
 export type JobRecord = {
@@ -47,6 +51,7 @@ export type JobRecord = {
   description?: string
   skillsRequired?: string[]
   agingDays: number
+  candidatesApplied: number
 }
 
 export type JobFormValues = {

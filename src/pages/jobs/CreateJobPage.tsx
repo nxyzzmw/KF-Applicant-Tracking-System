@@ -8,6 +8,21 @@ type CreateJobPageProps = {
   onSubmit: (values: JobFormValues) => Promise<void>
 }
 
+type SalaryOption = {
+  value: string
+  label: string
+  min: string
+  max: string
+}
+
+const SALARY_OPTIONS: SalaryOption[] = [
+  { value: '2-3', label: '2-3 (Annual)', min: '2', max: '3' },
+  { value: '3-4', label: '3-4 (Annual)', min: '3', max: '4' },
+  { value: '4-5', label: '4-5 (Annual)', min: '4', max: '5' },
+  { value: '5-7', label: '5-7 (Annual)', min: '5', max: '7' },
+  { value: '7+', label: '7+ (Annual)', min: '7', max: '7' },
+]
+
 const defaultValues: JobFormValues = {
   title: '',
   department: 'Engineering',
@@ -35,19 +50,11 @@ function CreateJobPage({ saving, error, onCancel, onSubmit }: CreateJobPageProps
     if (!values.location.trim()) errors.location = 'Location is required'
     if (!values.employmentType.trim()) errors.employmentType = 'Employment Type is required'
     if (!values.experienceLevel.trim()) errors.experienceLevel = 'Experience is required'
-    if (!values.salaryMin.trim()) errors.salaryMin = 'Salary Min is required'
-    if (!values.salaryMax.trim()) errors.salaryMax = 'Salary Max is required'
+    if (!values.salaryMin.trim() || !values.salaryMax.trim()) errors.salaryMin = 'Salary range is required'
     if (!values.hiringManager.trim()) errors.hiringManager = 'Hiring Manager is required'
     if (!values.openings.trim() || Number(values.openings) < 1) errors.openings = 'Openings should be at least 1'
     if (!values.targetClosureDate.trim()) errors.targetClosureDate = 'Target Closure Date is required'
 
-    const salaryMin = Number(values.salaryMin)
-    const salaryMax = Number(values.salaryMax)
-    if (values.salaryMin.trim() && Number.isNaN(salaryMin)) errors.salaryMin = 'Salary Min must be a number'
-    if (values.salaryMax.trim() && Number.isNaN(salaryMax)) errors.salaryMax = 'Salary Max must be a number'
-    if (!Number.isNaN(salaryMin) && !Number.isNaN(salaryMax) && salaryMax < salaryMin) {
-      errors.salaryMax = 'Salary Max should be greater than Salary Min'
-    }
     return errors
   }
 
@@ -66,6 +73,8 @@ function CreateJobPage({ saving, error, onCancel, onSubmit }: CreateJobPageProps
     if (Object.keys(nextErrors).length > 0) return
     await onSubmit(form)
   }
+
+  const selectedSalaryRange = SALARY_OPTIONS.find((option) => option.min === form.salaryMin && option.max === form.salaryMax)?.value ?? ''
 
   return (
     <form className="job-editor" onSubmit={(event) => void handleSubmit(event)}>
@@ -183,23 +192,23 @@ function CreateJobPage({ saving, error, onCancel, onSubmit }: CreateJobPageProps
             </div>
             <div className="field">
               <label>Salary Range (Annual)</label>
-              <div className="field-row">
-                <input
-                  className={formErrors.salaryMin ? 'input-error' : ''}
-                  type="number"
-                  value={form.salaryMin}
-                  onChange={(event) => updateField('salaryMin', event.target.value)}
-                  placeholder="Min (e.g. 120000)"
-                />
-                <input
-                  className={formErrors.salaryMax ? 'input-error' : ''}
-                  type="number"
-                  value={form.salaryMax}
-                  onChange={(event) => updateField('salaryMax', event.target.value)}
-                  placeholder="Max (e.g. 180000)"
-                />
-              </div>
-              {(formErrors.salaryMin || formErrors.salaryMax) && <small className="field-error">{formErrors.salaryMin ?? formErrors.salaryMax}</small>}
+              <select
+                className={formErrors.salaryMin ? 'input-error' : ''}
+                value={selectedSalaryRange}
+                onChange={(event) => {
+                  const selected = SALARY_OPTIONS.find((option) => option.value === event.target.value)
+                  updateField('salaryMin', selected?.min ?? '')
+                  updateField('salaryMax', selected?.max ?? '')
+                }}
+              >
+                <option value="">Select salary range</option>
+                {SALARY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {formErrors.salaryMin && <small className="field-error">{formErrors.salaryMin}</small>}
             </div>
           </div>
           <div className="field">
