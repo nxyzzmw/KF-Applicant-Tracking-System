@@ -3,6 +3,9 @@ import './App.css'
 import LoadingScreen from './pages/loading/LoadingScreen'
 import './pages/jobs/JobListPage.css'
 import AppRoutes from './routes/AppRoutes'
+import './components/common/common.css'
+import { ToastProvider } from './components/common/ToastProvider'
+import { ConfirmProvider } from './components/common/ConfirmProvider'
 
 function App() {
   const [bootMinimumElapsed, setBootMinimumElapsed] = useState(false)
@@ -19,13 +22,15 @@ function App() {
   const showLoader = showBootLoader || navigationLoading
 
   return (
-    <>
-      <AppRoutes
-        onInitialDataReady={() => setBootDataReady(true)}
-        onNavigationLoadingChange={(loading) => setNavigationLoading(loading)}
-      />
-      {showLoader && <LoadingScreen onProgressDone={() => setBootProgressDone(true)} />}
-    </>
+    <ToastProvider>
+      <ConfirmProvider>
+        <AppRoutes
+          onInitialDataReady={() => setBootDataReady(true)}
+          onNavigationLoadingChange={(loading) => setNavigationLoading(loading)}
+        />
+        {showLoader && <LoadingScreen onProgressDone={() => setBootProgressDone(true)} />}
+      </ConfirmProvider>
+    </ToastProvider>
   )
 }
 

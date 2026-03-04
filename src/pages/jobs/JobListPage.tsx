@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { JobRecord, JobStatus } from '../../features/jobs/jobTypes'
 import { formatDisplayDateIN } from '../../utils/dateUtils'
+import DataTable, { type TableColumn } from '../../components/common/Table'
+import { SkeletonRows } from '../../components/common/Loader'
 
 type JobListPageProps = {
   jobs: JobRecord[]
@@ -17,12 +19,15 @@ type JobListPageProps = {
   onCreate: () => void
   onView: (jobId: string) => void
   onEdit: (jobId: string) => void
+  onManageCandidates: (jobId: string) => void
   onDelete: (jobId: string) => void
   onStatusChange: (job: JobRecord, status: JobStatus) => void
   busyJobId: string | null
+  canCreateJob?: boolean
+  canEditJob?: boolean
+  canDeleteJob?: boolean
 }
 
-const PAGE_SIZE = 5
 const STATUS_OPTIONS: Array<{ value: JobStatus; label: string }> = [
   { value: 'Open', label: 'Open' },
   { value: 'On Hold', label: 'On Hold' },
@@ -91,35 +96,18 @@ function JobListPage({
   onCreate,
   onView,
   onEdit,
+  onManageCandidates,
   onDelete,
   onStatusChange,
   busyJobId,
+  canCreateJob = true,
+  canEditJob = true,
+  canDeleteJob = true,
 }: JobListPageProps) {
-  const [page, setPage] = useState(1)
-
   const departments = useMemo(
     () => Array.from(new Set(jobs.map((job) => job.department))).sort((a, b) => a.localeCompare(b)),
     [jobs],
   )
-
-  useEffect(() => {
-    setPage(1)
-  }, [searchTerm, departmentFilter, statusFilter])
-
-  const pageCount = Math.max(1, Math.ceil(jobs.length / PAGE_SIZE))
-  const currentPage = Math.min(page, pageCount)
-  const pagedJobs = useMemo(() => {
-    const start = (currentPage - 1) * PAGE_SIZE
-    return jobs.slice(start, start + PAGE_SIZE)
-  }, [jobs, currentPage])
-
-  const goPrevPage = useCallback(() => {
-    setPage((prev) => Math.max(1, prev - 1))
-  }, [])
-
-  const goNextPage = useCallback(() => {
-    setPage((prev) => Math.min(pageCount, prev + 1))
-  }, [pageCount])
 
   const handleExportExcel = useCallback(() => {
     const rows = jobs.map((job) => [
@@ -201,6 +189,117 @@ function JobListPage({
     printWindow.print()
   }, [jobs])
 
+  const columns: Array<TableColumn<JobRecord>> = useMemo(
+    () => [
+      {
+        id: 'title',
+        header: 'Job Title & ID',
+        sortable: true,
+        accessor: (row) => `${row.title || 'Untitled Job'} ${row.reqId || 'ID pending'}`,
+        cell: (row) => (
+          <>
+            <strong>{row.title || 'Untitled Job'}</strong>
+            <span>{row.reqId || 'ID pending'}</span>
+          </>
+        ),
+      },
+      {
+        id: 'department',
+        header: 'Department',
+        sortable: true,
+        accessor: (row) => row.department,
+      },
+      {
+        id: 'status',
+        header: 'Status',
+        sortable: true,
+        accessor: (row) => row.status,
+        align: 'center',
+        cell: (row) => <span className={`job-status ${statusClassName(row.status)}`}>{statusLabel(row.status)}</span>,
+      },
+      {
+        id: 'openings',
+        header: 'Openings',
+        sortable: true,
+        accessor: (row) => `${row.filled}/${row.openings}`,
+        cell: (row) => {
+          const ratio = row.openings === 0 ? 0 : Math.round((row.filled / row.openings) * 100)
+          return (
+            <div className="openings-cell">
+              <p>
+                {row.filled}/{row.openings} Filled
+              </p>
+              <div className="progress-track">
+                <span style={{ width: `${ratio}%` }} />
+              </div>
+              <small>{ratio}%</small>
+            </div>
+          )
+        },
+      },
+      {
+        id: 'candidatesApplied',
+        header: 'Candidates Applied',
+        sortable: true,
+        accessor: (row) => row.candidatesApplied,
+        align: 'center',
+      },
+      {
+        id: 'expiresIn',
+        header: 'Expires In',
+        sortable: true,
+        accessor: (row) => getExpiryLabel(row.targetClosureDate),
+        align: 'center',
+        cell: (row) => getExpiryLabel(row.targetClosureDate),
+      },
+      {
+        id: 'actions',
+        header: 'Actions',
+        align: 'right',
+        cell: (row) => (
+          <div className="actions-cell">
+            <button type="button" className="table-action" disabled={busyJobId === row.id} onClick={() => onManageCandidates(row.id)}>
+              <span className="material-symbols-rounded">group</span>
+              <span>Candidates</span>
+            </button>
+            <button type="button" className="table-action" disabled={busyJobId === row.id} onClick={() => onView(row.id)}>
+              <span className="material-symbols-rounded">visibility</span>
+              <span>View</span>
+            </button>
+            {canEditJob && (
+              <>
+                <button type="button" className="table-action" disabled={busyJobId === row.id} onClick={() => onEdit(row.id)}>
+                  <span className="material-symbols-rounded">edit</span>
+                  <span>Edit</span>
+                </button>
+                <select
+                  className={`table-action table-action--status ${statusClassName(row.status)}`}
+                  aria-label={`Update status for ${row.title || 'job'}`}
+                  value={row.status}
+                  disabled={busyJobId === row.id}
+                  onChange={(event) => onStatusChange(row, event.target.value as JobStatus)}
+                >
+                  {STATUS_OPTIONS.map((status) => (
+                    <option key={status.value} value={status.value}>
+                      {status.label}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            {canDeleteJob && (
+              <button type="button" className="table-action table-action--danger" disabled={busyJobId === row.id} onClick={() => onDelete(row.id)}>
+                <span className="material-symbols-rounded">delete</span>
+                <span>Delete</span>
+              </button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    [busyJobId, canDeleteJob, canEditJob, onDelete, onEdit, onManageCandidates, onStatusChange, onView],
+  )
+
   return (
     <>
       <section className="page-head">
@@ -218,10 +317,12 @@ function JobListPage({
             <span className="material-symbols-rounded">picture_as_pdf</span>
             <span>Export PDF</span>
           </button>
-          <button type="button" className="primary-btn" onClick={onCreate}>
-            <span className="material-symbols-rounded">add</span>
-            <span>Create New Job</span>
-          </button>
+          {canCreateJob && (
+            <button type="button" className="primary-btn" onClick={onCreate}>
+              <span className="material-symbols-rounded">add</span>
+              <span>Create New Job</span>
+            </button>
+          )}
         </div>
       </section>
 
@@ -259,22 +360,12 @@ function JobListPage({
 
       <section className="table-panel">
         {loading && (
-          <>
+          <div style={{ padding: '0.8rem' }}>
             <p className="panel-message">Loading jobs...</p>
-            <div className="skeleton-table" aria-hidden="true">
-              {Array.from({ length: 5 }, (_, i) => (
-                <div key={i} className="skeleton-row">
-                  <span className="skeleton-block w-24" />
-                  <span className="skeleton-block w-14" />
-                  <span className="skeleton-block w-12" />
-                  <span className="skeleton-block w-20" />
-                  <span className="skeleton-block w-14" />
-                  <span className="skeleton-block w-12" />
-                  <span className="skeleton-block w-22" />
-                </div>
-              ))}
+            <div style={{ padding: '0.4rem 0' }}>
+              <SkeletonRows rows={8} />
             </div>
-          </>
+          </div>
         )}
         {error && (
           <p className="panel-message panel-message--error">
@@ -285,108 +376,43 @@ function JobListPage({
           <div className="empty-state">
             <h3>No Data Available</h3>
             <p>No job records. Create your first requisition to get started.</p>
-            <button type="button" className="primary-btn" onClick={onCreate}>
-              <span className="material-symbols-rounded">add</span>
-              <span>Create First Job</span>
-            </button>
+            {canCreateJob && (
+              <button type="button" className="primary-btn" onClick={onCreate}>
+                <span className="material-symbols-rounded">add</span>
+                <span>Create First Job</span>
+              </button>
+            )}
           </div>
         )}
-        {!loading && (
-          <table>
-          <thead>
-            <tr>
-              <th>Job Title & ID</th>
-                <th>Department</th>
-                <th>Status</th>
-                <th>Openings</th>
-                <th>Candidates Applied</th>
-                <th>Expires In</th>
-                <th className="actions-head">Actions</th>
-              </tr>
-            </thead>
-          <tbody>
-            {pagedJobs.map((job) => {
-              const ratio = job.openings === 0 ? 0 : Math.round((job.filled / job.openings) * 100)
-              return (
-                <tr key={job.id}>
-                  <td>
-                    <strong>{job.title || 'Untitled Job'}</strong>
-                    <span>{job.reqId || 'ID pending'}</span>
-                  </td>
-                  <td>{job.department}</td>
-                  <td>
-                    <span className={`job-status ${statusClassName(job.status)}`}>{statusLabel(job.status)}</span>
-                  </td>
-                  <td>
-                    <div className="openings-cell">
-                      <p>
-                        {job.filled}/{job.openings} Filled
-                      </p>
-                      <div className="progress-track">
-                        <span style={{ width: `${ratio}%` }} />
-                      </div>
-                      <small>{ratio}%</small>
-                    </div>
-                  </td>
-                  <td>{job.candidatesApplied}</td>
-                  <td>{getExpiryLabel(job.targetClosureDate)}</td>
-                  <td className="actions-cell">
-                    <button type="button" className="table-action" disabled={busyJobId === job.id} onClick={() => onView(job.id)}>
-                      <span className="material-symbols-rounded">visibility</span>
-                      <span>View</span>
-                    </button>
-                    <button type="button" className="table-action" disabled={busyJobId === job.id} onClick={() => onEdit(job.id)}>
-                      <span className="material-symbols-rounded">edit</span>
-                      <span>Edit</span>
-                    </button>
-                    <select
-                      className={`table-action table-action--status ${statusClassName(job.status)}`}
-                      aria-label={`Update status for ${job.title || 'job'}`}
-                      value={job.status}
-                      disabled={busyJobId === job.id}
-                      onChange={(event) => onStatusChange(job, event.target.value as JobStatus)}
-                    >
-                      {STATUS_OPTIONS.map((status) => (
-                        <option key={status.value} value={status.value}>
-                          {status.label}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      className="table-action table-action--danger"
-                      disabled={busyJobId === job.id}
-                      onClick={() => onDelete(job.id)}
-                    >
-                      <span className="material-symbols-rounded">delete</span>
-                      <span>Delete</span>
-                    </button>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-          </table>
-        )}
-
-        {!loading && jobs.length > 0 && (
-          <div className="table-footer">
-          <p>
-            Showing <strong>{jobs.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1}</strong> to{' '}
-            <strong>{Math.min(currentPage * PAGE_SIZE, jobs.length)}</strong> of <strong>{jobs.length}</strong> jobs
-          </p>
-          <div className="pagination">
-            <button type="button" className="ghost-btn" disabled={currentPage === 1} onClick={goPrevPage}>
-              Prev
-            </button>
-            <button type="button" className="page-active">
-              {currentPage}
-            </button>
-            <button type="button" className="ghost-btn" disabled={currentPage >= pageCount} onClick={goNextPage}>
-              Next
-            </button>
-          </div>
-          </div>
+        {!loading && !error && jobs.length > 0 && (
+          <>
+            <div className="table-footer" style={{ borderBottom: 'none', paddingBottom: '0.4rem' }}>
+              <p>
+                Showing <strong>{jobs.length}</strong> jobs
+              </p>
+            </div>
+            <DataTable
+              rows={jobs}
+              rowKey={(row) => row.id}
+              columns={columns}
+              pageSize={8}
+              selectable
+              bulkActions={
+                canEditJob
+                  ? [
+                      {
+                        label: 'Mark Open',
+                        onClick: (rows) => rows.forEach((row) => onStatusChange(row, 'Open')),
+                      },
+                      {
+                        label: 'Mark On Hold',
+                        onClick: (rows) => rows.forEach((row) => onStatusChange(row, 'On Hold')),
+                      },
+                    ]
+                  : []
+              }
+            />
+          </>
         )}
       </section>
 

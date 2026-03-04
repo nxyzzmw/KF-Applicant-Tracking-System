@@ -1,4 +1,5 @@
 import { apiRequest } from '../../services/axiosInstance'
+import { invalidateCache, readCache, writeCache } from '../../services/queryCache'
 import { calculateAgingDays } from '../../utils/agingCalculator'
 import type { JobApiRecord, JobRecord, JobStatus } from './jobTypes'
 
@@ -8,6 +9,9 @@ export type JobsQueryParams = {
   department?: string
   status?: JobStatus
 }
+
+const JOBS_LIST_CACHE_TTL_MS = 15_000
+const JOBS_DETAIL_CACHE_TTL_MS = 30_000
 
 function normalizeStatus(status?: string): JobStatus {
   const value = (status ?? '').trim().toLowerCase()
@@ -89,19 +93,30 @@ export async function getJobs(query: JobsQueryParams = {}): Promise<JobRecord[]>
   if (query.status && query.status.trim().length > 0) params.set('status', query.status)
   const queryString = params.toString()
   const path = queryString.length > 0 ? `/jobs?${queryString}` : '/jobs'
+  const cacheKey = `jobs:list:${path}`
+  const cached = readCache<JobRecord[]>(cacheKey)
+  if (cached) return cached
 
   const response = await apiRequest<JobsListResponse>(path)
-  return extractJobs(response).map(normalizeJob).filter((job) => job.id.length > 0)
+  const normalized = extractJobs(response).map(normalizeJob).filter((job) => job.id.length > 0)
+  writeCache(cacheKey, normalized, JOBS_LIST_CACHE_TTL_MS)
+  return normalized
 }
 
 export async function getJobById(jobId: string): Promise<JobRecord> {
+  const cacheKey = `jobs:detail:${jobId}`
+  const cached = readCache<JobRecord>(cacheKey)
+  if (cached) return cached
+
   const response = await apiRequest<JobApiRecord | { data?: JobApiRecord }>(`/jobs/${jobId}`)
   const payload =
     typeof response === 'object' && response !== null && 'data' in response ? response.data : (response as JobApiRecord)
   if (!payload) {
     throw new Error('Job details not found')
   }
-  return normalizeJob(payload)
+  const normalized = normalizeJob(payload)
+  writeCache(cacheKey, normalized, JOBS_DETAIL_CACHE_TTL_MS)
+  return normalized
 }
 
 export async function createJob(data: Partial<JobApiRecord>): Promise<JobRecord> {
@@ -109,7 +124,9 @@ export async function createJob(data: Partial<JobApiRecord>): Promise<JobRecord>
     method: 'POST',
     body: data,
   })
-  return normalizeJob(response)
+  const normalized = normalizeJob(response)
+  invalidateCache('jobs:')
+  return normalized
 }
 
 export async function updateJob(jobId: string, data: Partial<JobApiRecord>): Promise<JobRecord> {
@@ -117,7 +134,9 @@ export async function updateJob(jobId: string, data: Partial<JobApiRecord>): Pro
     method: 'PUT',
     body: data,
   })
-  return normalizeJob(response)
+  const normalized = normalizeJob(response)
+  invalidateCache('jobs:')
+  return normalized
 }
 
 export async function updateJobStatus(jobId: string, status: JobStatus): Promise<JobRecord> {
@@ -125,11 +144,14 @@ export async function updateJobStatus(jobId: string, status: JobStatus): Promise
     method: 'PUT',
     body: { jobStatus: status },
   })
-  return normalizeJob(response)
+  const normalized = normalizeJob(response)
+  invalidateCache('jobs:')
+  return normalized
 }
 
 export async function deleteJob(jobId: string): Promise<void> {
   await apiRequest<void>(`/jobs/${jobId}`, {
     method: 'DELETE',
   })
+  invalidateCache('jobs:')
 }

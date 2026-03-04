@@ -1,15 +1,30 @@
 type SidebarProps = {
   onJobsClick?: () => void
   onDashboardClick?: () => void
-  activeNav: 'dashboard' | 'jobs'
+  onCandidatesClick?: () => void
+  onUsersClick?: () => void
+  activeNav: 'dashboard' | 'jobs' | 'candidates' | 'users'
   logoSrc?: string
   collapsed: boolean
   onToggleCollapse: () => void
   role?: string
+  canManageUsers?: boolean
   onLogout?: () => void
 }
 
-function Sidebar({ onJobsClick, onDashboardClick, activeNav, logoSrc, collapsed, onToggleCollapse, role, onLogout }: SidebarProps) {
+function Sidebar({
+  onJobsClick,
+  onDashboardClick,
+  onCandidatesClick,
+  onUsersClick,
+  activeNav,
+  logoSrc,
+  collapsed,
+  onToggleCollapse,
+  role,
+  canManageUsers,
+  onLogout,
+}: SidebarProps) {
   const roleLabel = role?.trim() || 'HR Recruiter'
 
   return (
@@ -34,10 +49,16 @@ function Sidebar({ onJobsClick, onDashboardClick, activeNav, logoSrc, collapsed,
           <span className="material-symbols-rounded nav-icon">work</span>
           <span className="nav-label">Jobs</span>
         </button>
-        <button type="button" className="jm-nav__item">
+        <button type="button" className={`jm-nav__item ${activeNav === 'candidates' ? 'is-active' : ''}`} onClick={onCandidatesClick}>
           <span className="material-symbols-rounded nav-icon">group</span>
           <span className="nav-label">Candidates</span>
         </button>
+        {canManageUsers && (
+          <button type="button" className={`jm-nav__item ${activeNav === 'users' ? 'is-active' : ''}`} onClick={onUsersClick}>
+            <span className="material-symbols-rounded nav-icon">admin_panel_settings</span>
+            <span className="nav-label">Users</span>
+          </button>
+        )}
         <button type="button" className="jm-nav__item">
           <span className="material-symbols-rounded nav-icon">description</span>
           <span className="nav-label">Reports</span>

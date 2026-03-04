@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import AuthLayout from '../components/auth/AuthLayout'
+import { useConfirm } from '../components/common/ConfirmProvider'
+import { useToast } from '../components/common/ToastProvider'
 import type { HeaderAlertItem } from '../components/layout/Header'
 import Layout from '../components/layout/Layout'
 import { createJob, deleteJob, getJobById, getJobs, updateJob, updateJobStatus } from '../features/jobs/jobsAPI'
@@ -9,17 +11,23 @@ import AuthSuccessPage from '../pages/auth/AuthSuccessPage'
 import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage'
 import LoginPage from '../pages/auth/LoginPage'
 import DashboardPage from '../pages/dashboard/DashboardPage'
+import { getRolePermissions, normalizeRole } from '../features/auth/roleAccess'
+import AddCandidatePage from '../pages/candidates/AddCandidatePage'
+import CandidateDetailPage from '../pages/candidates/CandidateDetailPage'
+import CandidateListPage from '../pages/candidates/CandidateListPage'
 import CreateJobPage from '../pages/jobs/CreateJobPage'
 import EditJobPage from '../pages/jobs/EditJobPage'
 import JobDetailsPage from '../pages/jobs/JobDetailsPage'
 import JobListPage from '../pages/jobs/JobListPage'
+import UserManagementPage from '../pages/users/UserManagementPage'
 import { apiRequest } from '../services/axiosInstance'
 import { clearTokens, getAccessToken } from '../services/tokenService'
+import { getErrorMessage } from '../utils/errorUtils'
 import { toApiDateValue } from '../utils/dateUtils'
 import appLogo from '../assets/kf-logo.png'
 import './AppRoutes.css'
 
-type JobView = 'dashboard' | 'list' | 'create' | 'details' | 'edit'
+type JobView = 'dashboard' | 'list' | 'create' | 'details' | 'edit' | 'candidate-list' | 'candidate-add' | 'candidate-details' | 'users'
 type AuthPage = 'login' | 'forgot' | 'success'
 
 type AppRoutesProps = {
@@ -99,6 +107,8 @@ function toApiPayload(values: JobFormValues, reqId?: string) {
 }
 
 function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesProps) {
+  const { showToast } = useToast()
+  const { confirm } = useConfirm()
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAccessToken()))
   const [authPage, setAuthPage] = useState<AuthPage>(getInitialAuthPage)
 
@@ -106,6 +116,8 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
   const [jobs, setJobs] = useState<JobRecord[]>([])
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
   const [selectedJob, setSelectedJob] = useState<JobRecord | null>(null)
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null)
+  const [selectedCandidateJobId, setSelectedCandidateJobId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -122,9 +134,12 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
   const [alertPermission, setAlertPermission] = useState<NotificationPermission | 'unsupported'>(
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported',
   )
+  const [rbacVersion, setRbacVersion] = useState(0)
 
   const hasReportedInitialLoadRef = useRef(false)
   const loadJobsRequestIdRef = useRef(0)
+  const normalizedRole = normalizeRole(sidebarRole)
+  const permissions = useMemo(() => getRolePermissions(normalizedRole), [normalizedRole, rbacVersion])
 
   useEffect(() => {
     if (isAuthenticated) return
@@ -168,7 +183,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
           setJobs(result)
         }
       } catch (loadError) {
-        const message = loadError instanceof Error ? loadError.message : 'Unable to load jobs'
+        const message = getErrorMessage(loadError, 'Unable to load jobs')
         if (loadJobsRequestIdRef.current === requestId) {
           setListError(message)
         }
@@ -197,7 +212,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
   useEffect(() => {
     if (!isAuthenticated) return
 
-    if (view === 'dashboard') {
+    if (view === 'dashboard' || view.startsWith('candidate')) {
       void loadJobs()
       return
     }
@@ -280,15 +295,23 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
   }, [isAuthenticated, alertPermission, alerts])
 
   useEffect(() => {
-    if (!isAuthenticated || !AUTH_ME_ENDPOINT) return
+    if (!isAuthenticated) return
     let isMounted = true
 
     async function loadUserRole() {
+      const endpoints = [AUTH_ME_ENDPOINT, '/me', '/auth/me'].filter((value, index, all) => value && all.indexOf(value) === index)
       try {
-        const profile = await apiRequest<UserProfileResponse>(AUTH_ME_ENDPOINT)
-        const fetchedRole = profile.role ?? profile.user?.role
-        if (isMounted && fetchedRole && fetchedRole.trim().length > 0) {
-          setSidebarRole(fetchedRole)
+        for (const endpoint of endpoints) {
+          try {
+            const profile = await apiRequest<UserProfileResponse>(endpoint)
+            const fetchedRole = profile.role ?? profile.user?.role
+            if (isMounted && fetchedRole && fetchedRole.trim().length > 0) {
+              setSidebarRole(fetchedRole)
+              return
+            }
+          } catch {
+            // try next profile endpoint
+          }
         }
       } catch {
         // Keep fallback role so app remains usable before auth module integration.
@@ -313,7 +336,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         const result = await getJobById(jobId)
         if (isMounted) setSelectedJob(result)
       } catch (detailsError) {
-        const message = detailsError instanceof Error ? detailsError.message : 'Unable to load job details'
+        const message = getErrorMessage(detailsError, 'Unable to load job details')
         if (isMounted) setActionError(message)
       } finally {
         if (isMounted) setDetailsLoading(false)
@@ -327,6 +350,10 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
 
   const handleCreate = useCallback(
     async (values: JobFormValues) => {
+      if (!permissions.canCreateJob) {
+        showToast('You do not have access to create jobs.', 'error')
+        return
+      }
       setSaving(true)
       setActionError(null)
       try {
@@ -339,18 +366,23 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         setSelectedJob(created)
         navigateTo('details')
       } catch (createError) {
-        const message = createError instanceof Error ? createError.message : 'Unable to create job'
+        const message = getErrorMessage(createError, 'Unable to create job')
         setActionError(message)
+        showToast(message, 'error')
       } finally {
         setSaving(false)
       }
     },
-    [loadJobs, navigateTo],
+    [loadJobs, navigateTo, permissions.canCreateJob, showToast],
   )
 
   const handleUpdate = useCallback(
     async (values: JobFormValues) => {
       if (!selectedJobId) return
+      if (!permissions.canEditJob) {
+        showToast('You do not have access to edit jobs.', 'error')
+        return
+      }
       setSaving(true)
       setActionError(null)
       try {
@@ -359,18 +391,28 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         setSelectedJob(updated)
         navigateTo('details')
       } catch (updateError) {
-        const message = updateError instanceof Error ? updateError.message : 'Unable to update job'
+        const message = getErrorMessage(updateError, 'Unable to update job')
         setActionError(message)
+        showToast(message, 'error')
       } finally {
         setSaving(false)
       }
     },
-    [selectedJobId, loadJobs, navigateTo],
+    [selectedJobId, loadJobs, navigateTo, permissions.canEditJob, showToast],
   )
 
   const handleDelete = useCallback(
     async (jobId: string) => {
-      if (!window.confirm('Soft delete this job?')) return
+      if (!permissions.canDeleteJob) {
+        showToast('Only authorized roles can delete jobs.', 'error')
+        return
+      }
+      const accepted = await confirm({
+        title: 'Delete Job',
+        message: 'Soft delete this job?',
+        confirmLabel: 'Delete',
+      })
+      if (!accepted) return
       setBusyJobId(jobId)
       setActionError(null)
       try {
@@ -381,32 +423,40 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
           setSelectedJob(null)
           navigateTo('list')
         }
+        showToast('Job deleted successfully.', 'success')
       } catch (deleteError) {
-        const message = deleteError instanceof Error ? deleteError.message : 'Unable to delete job'
+        const message = getErrorMessage(deleteError, 'Unable to delete job')
         setActionError(message)
+        showToast(message, 'error')
       } finally {
         setBusyJobId(null)
       }
     },
-    [activeListQuery, loadJobs, navigateTo, selectedJobId, view],
+    [activeListQuery, confirm, loadJobs, navigateTo, permissions.canDeleteJob, selectedJobId, showToast, view],
   )
 
   const handleStatusChange = useCallback(
     async (job: JobRecord, status: JobRecord['status']) => {
+      if (!permissions.canEditJob) {
+        showToast('You do not have access to update job status.', 'error')
+        return
+      }
       setBusyJobId(job.id)
       setActionError(null)
       try {
         const updated = await updateJobStatus(job.id, status)
         await loadJobs(view === 'list' ? activeListQuery : {})
         if (selectedJobId === job.id) setSelectedJob(updated)
+        showToast('Job status updated.', 'success')
       } catch (statusError) {
-        const message = statusError instanceof Error ? statusError.message : 'Unable to update job status'
+        const message = getErrorMessage(statusError, 'Unable to update job status')
         setActionError(message)
+        showToast(message, 'error')
       } finally {
         setBusyJobId(null)
       }
     },
-    [activeListQuery, loadJobs, selectedJobId, view],
+    [activeListQuery, loadJobs, permissions.canEditJob, selectedJobId, showToast, view],
   )
 
   const openDetails = useCallback(
@@ -423,6 +473,19 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
       navigateTo('edit')
     },
     [navigateTo],
+  )
+
+  const openCandidatesForJob = useCallback(
+    (jobId: string) => {
+      if (!permissions.canViewCandidates) {
+        showToast('You do not have access to candidate management.', 'error')
+        return
+      }
+      setSelectedCandidateJobId(jobId)
+      setSelectedCandidateId(null)
+      navigateTo('candidate-list')
+    },
+    [navigateTo, permissions.canViewCandidates, showToast],
   )
 
   const handleLogout = useCallback(() => {
@@ -471,11 +534,33 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
 
   return (
     <Layout
-      onShowJobs={() => navigateTo('list')}
+      onShowJobs={() => {
+        if (!permissions.canViewJobs) {
+          showToast('Your role has read restrictions for Jobs module.', 'error')
+          return
+        }
+        navigateTo('list')
+      }}
       onShowDashboard={() => navigateTo('dashboard')}
-      activeNav={view === 'dashboard' ? 'dashboard' : 'jobs'}
+      onShowCandidates={() => {
+        if (!permissions.canViewCandidates) {
+          showToast('Your role has no access to Candidates module.', 'error')
+          return
+        }
+        setSelectedCandidateJobId(null)
+        navigateTo('candidate-list')
+      }}
+      onShowUsers={() => {
+        if (!permissions.canManageUsers) {
+          showToast('Only Super Admin can access users and roles.', 'error')
+          return
+        }
+        navigateTo('users')
+      }}
+      activeNav={view === 'dashboard' ? 'dashboard' : view === 'users' ? 'users' : view.startsWith('candidate') ? 'candidates' : 'jobs'}
       logoSrc={appLogo}
-      role={sidebarRole}
+      role={normalizedRole}
+      canManageUsers={permissions.canManageUsers}
       onLogout={handleLogout}
       alerts={alerts}
       alertsLoading={alertsLoading}
@@ -507,15 +592,19 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
             setJobListStatusFilter('all')
           }}
           onRetry={() => void loadJobs(activeListQuery)}
-          onCreate={() => navigateTo('create')}
+          onCreate={() => (permissions.canCreateJob ? navigateTo('create') : showToast('You do not have access to create jobs.', 'error'))}
           onView={openDetails}
           onEdit={openEdit}
+          onManageCandidates={openCandidatesForJob}
           onDelete={(jobId) => void handleDelete(jobId)}
           onStatusChange={(job, status) => void handleStatusChange(job, status)}
           busyJobId={busyJobId}
+          canCreateJob={permissions.canCreateJob}
+          canEditJob={permissions.canEditJob}
+          canDeleteJob={permissions.canDeleteJob}
         />
       )}
-      {view === 'create' && (
+      {view === 'create' && permissions.canCreateJob && (
         <CreateJobPage saving={saving} error={actionError} onCancel={() => navigateTo('list')} onSubmit={handleCreate} />
       )}
       {view === 'details' && (
@@ -525,9 +614,11 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
           error={actionError}
           onBack={() => navigateTo('list')}
           onEdit={() => navigateTo('edit')}
+          onManageCandidates={openCandidatesForJob}
+          canEditJob={permissions.canEditJob}
         />
       )}
-      {view === 'edit' && (
+      {view === 'edit' && permissions.canEditJob && (
         <EditJobPage
           job={selectedJob}
           loading={detailsLoading}
@@ -536,6 +627,49 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
           onBack={() => navigateTo('details')}
           onSubmit={handleUpdate}
         />
+      )}
+      {view === 'candidate-list' && (
+        <CandidateListPage
+          jobs={jobs}
+          initialJobId={selectedCandidateJobId}
+          canCreateCandidate={permissions.canCreateCandidate}
+          canEditCandidate={permissions.canEditCandidate}
+          canManageCandidateStage={permissions.canManageCandidateStage}
+          onAddCandidate={() =>
+            permissions.canCreateCandidate ? navigateTo('candidate-add') : showToast('You do not have access to add candidates.', 'error')
+          }
+          onViewCandidate={(candidateId) => {
+            setSelectedCandidateId(candidateId)
+            navigateTo('candidate-details')
+          }}
+          onEditCandidate={(candidateId) => {
+            setSelectedCandidateId(candidateId)
+            navigateTo('candidate-details')
+          }}
+        />
+      )}
+      {view === 'candidate-add' && permissions.canCreateCandidate && (
+        <AddCandidatePage
+          jobs={jobs}
+          initialJobId={selectedCandidateJobId}
+          onBack={() => navigateTo('candidate-list')}
+          onCreated={(candidateId) => {
+            setSelectedCandidateId(candidateId)
+            navigateTo('candidate-details')
+          }}
+        />
+      )}
+      {view === 'candidate-details' && selectedCandidateId && (
+        <CandidateDetailPage
+          candidateId={selectedCandidateId}
+          jobs={jobs}
+          onBack={() => navigateTo('candidate-list')}
+          canEdit={permissions.canEditCandidate}
+          canManageStage={permissions.canManageCandidateStage}
+        />
+      )}
+      {view === 'users' && permissions.canManageUsers && (
+        <UserManagementPage role={normalizedRole} onRbacPolicyUpdated={() => setRbacVersion((prev) => prev + 1)} />
       )}
     </Layout>
   )

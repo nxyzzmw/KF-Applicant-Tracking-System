@@ -1,0 +1,248 @@
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-default);
+  cursor: pointer;
+  font-weight: var(--font-weight-heading-bold);
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+.ui-btn--md {
+  padding: 0.58rem 1rem;
+}
+
+.ui-btn--sm {
+  padding: 0.38rem 0.68rem;
+  font-size: 0.84rem;
+}
+
+.ui-btn--primary {
+  color: #fff;
+  background: var(--button-gradient);
+}
+
+.ui-btn--secondary {
+  color: var(--text-body);
+  background: var(--surface);
+}
+
+.ui-btn--ghost {
+  color: var(--accent-royal-blue);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.ui-btn--danger {
+  color: #fff;
+  background: linear-gradient(135deg, #be123c, #e11d48);
+  border-color: rgba(225, 29, 72, 0.35);
+}
+
+.ui-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.42);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  padding: 1rem;
+}
+
+.ui-modal {
+  width: min(520px, 100%);
+  background: #fff;
+  border-radius: 14px;
+  border: 1px solid var(--border-default);
+}
+
+.ui-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--grid-lines);
+}
+
+.ui-modal__close {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted-2);
+  box-shadow: none;
+  transform: none;
+  font-size: 1.2rem;
+  padding: 0.2rem 0.4rem;
+}
+
+.ui-modal__body {
+  padding: 0.95rem 1rem;
+  color: var(--text-muted-2);
+}
+
+.ui-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  padding: 0.9rem 1rem 1rem;
+}
+
+.ui-toast-stack {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 60;
+  display: grid;
+  gap: 0.55rem;
+  width: min(360px, calc(100vw - 2rem));
+}
+
+.ui-toast {
+  border-radius: 10px;
+  border: 1px solid var(--border-default);
+  background: #fff;
+  padding: 0.7rem 0.8rem;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.12);
+  color: var(--text-body);
+  font-size: 0.9rem;
+}
+
+.ui-toast--success {
+  border-color: rgba(34, 197, 94, 0.32);
+}
+
+.ui-toast--error {
+  border-color: rgba(225, 29, 72, 0.36);
+}
+
+.ui-toast--info {
+  border-color: var(--border-default);
+}
+
+.ui-loader {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted-2);
+}
+
+.ui-loader__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--accent-blue);
+  animation: uiPulse 1s ease infinite;
+}
+
+.ui-skeleton {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ui-skeleton__row {
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(79, 158, 255, 0.16), rgba(79, 158, 255, 0.32), rgba(79, 158, 255, 0.16));
+  background-size: 220% 100%;
+  animation: uiShimmer 1.2s linear infinite;
+}
+
+.ui-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border-default);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.ui-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.ui-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f8fbff;
+  z-index: 1;
+}
+
+.ui-table th,
+.ui-table td {
+  padding: 0.78rem 0.9rem;
+  border-bottom: 1px solid var(--grid-lines);
+  vertical-align: middle;
+}
+
+.ui-table__sort {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted-2);
+  box-shadow: none;
+  transform: none;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0;
+}
+
+.ui-table__sort.is-sortable {
+  cursor: pointer;
+}
+
+.ui-table__bulk {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--grid-lines);
+}
+
+.ui-table__empty {
+  border: 1px dashed var(--border-default);
+  border-radius: 12px;
+  padding: 1.1rem;
+  color: var(--text-muted-2);
+  text-align: center;
+}
+
+.ui-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.ui-pagination__label {
+  color: var(--text-muted-2);
+  font-size: 0.86rem;
+}
+
+.offline-banner {
+  margin: 0;
+  padding: 0.45rem 1rem;
+  background: #fff7ed;
+  border-bottom: 1px solid rgba(249, 115, 22, 0.28);
+  color: #9a3412;
+  font-size: 0.86rem;
+}
+
+@keyframes uiPulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.78);
+  }
+}
+
+@keyframes uiShimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}

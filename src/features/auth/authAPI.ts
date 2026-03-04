@@ -11,7 +11,7 @@ import type {
 } from './authTypes'
 
 const envAuthBase = import.meta.env.VITE_AUTH_API_BASE?.trim()
-const AUTH_API_BASE = (envAuthBase || '/api/auth').replace(/\/+$/, '')
+const AUTH_API_BASE = (envAuthBase || '/auth').replace(/\/+$/, '')
 
 export async function login(payload: LoginRequest): Promise<LoginResponse> {
   const response = await axiosInstance.post<LoginResponse>(`${AUTH_API_BASE}/login`, payload)

@@ -907,6 +907,220 @@ tbody td span {
   color: var(--text-muted-2);
 }
 
+.candidate-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(260px, 260px);
+  gap: 0.8rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.4rem;
+  scrollbar-gutter: stable both-edges;
+  scroll-behavior: smooth;
+}
+
+.candidate-board::-webkit-scrollbar {
+  height: 11px;
+}
+
+.candidate-board::-webkit-scrollbar-track {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+}
+
+.candidate-board::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.45);
+  border-radius: 999px;
+  border: 2px solid rgba(248, 250, 252, 0.8);
+}
+
+.candidate-column {
+  --col-accent: #60a5fa;
+  --col-bg: rgba(96, 165, 250, 0.12);
+  border: 1px solid color-mix(in srgb, var(--col-accent) 40%, #111827);
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--col-bg) 72%, #0f172a), color-mix(in srgb, var(--col-bg) 46%, #111827));
+  padding: 0.8rem;
+  height: fit-content;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.candidate-column[data-drop-target='true'] {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+  transform: translateY(-2px);
+}
+
+.candidate-column h3 {
+  margin: 0 0 0.6rem;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  color: #e5eefb;
+  background: color-mix(in srgb, var(--col-accent) 22%, #0f172a);
+  border: 1px solid color-mix(in srgb, var(--col-accent) 45%, #1f2937);
+  border-radius: 999px;
+  padding: 0.3rem 0.6rem;
+}
+
+.candidate-column h3 small {
+  color: color-mix(in srgb, var(--col-accent) 60%, #dbeafe);
+  font-size: 0.8rem;
+}
+
+.candidate-column__list {
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+}
+
+.candidate-column__empty {
+  color: var(--text-muted-2);
+  font-size: 0.85rem;
+}
+
+.candidate-card {
+  border: 1px solid var(--grid-lines);
+  border-radius: 10px;
+  background: #ffffff;
+  text-align: left;
+  width: 100%;
+  box-shadow: none;
+  transform: none;
+  transition: transform 0.16s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.candidate-card strong {
+  display: block;
+}
+
+.candidate-card span,
+.candidate-card small {
+  display: block;
+  color: var(--text-muted-2);
+}
+
+.candidate-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-hover);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+}
+
+.candidate-card__quick {
+  margin-top: 0.45rem;
+  color: var(--accent-royal-blue);
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-body-semibold);
+}
+
+.candidate-card__quick-btn {
+  margin-top: 0.45rem;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  background: #f8fbff;
+  color: var(--accent-royal-blue);
+  font-size: 0.78rem;
+  font-weight: var(--font-weight-body-semibold);
+  padding: 0.35rem 0.45rem;
+  box-shadow: none;
+  transform: none;
+}
+
+.candidate-card__quick-btn:hover {
+  border-color: var(--border-hover);
+  background: #eef5ff;
+}
+
+.candidate-column--applied {
+  --col-accent: #60a5fa;
+  --col-bg: rgba(96, 165, 250, 0.18);
+}
+
+.candidate-column--screened {
+  --col-accent: #2dd4bf;
+  --col-bg: rgba(45, 212, 191, 0.18);
+}
+
+.candidate-column--shortlisted {
+  --col-accent: #22c55e;
+  --col-bg: rgba(34, 197, 94, 0.18);
+}
+
+.candidate-column--technical-intv-1,
+.candidate-column--technical-intv-2,
+.candidate-column--technical-interview-1,
+.candidate-column--technical-interview-2,
+.candidate-column--technical-interview-3 {
+  --col-accent: #f59e0b;
+  --col-bg: rgba(245, 158, 11, 0.18);
+}
+
+.candidate-column--hr-round,
+.candidate-column--hr-interview,
+.candidate-column--managerial-round,
+.candidate-column--final-interview {
+  --col-accent: #a78bfa;
+  --col-bg: rgba(167, 139, 250, 0.18);
+}
+
+.candidate-column--offered,
+.candidate-column--offer-accepted {
+  --col-accent: #10b981;
+  --col-bg: rgba(16, 185, 129, 0.18);
+}
+
+.candidate-column--offer-declined,
+.candidate-column--offer-revoked,
+.candidate-column--no-answer,
+.candidate-column--rejected-intv-1,
+.candidate-column--rejected-intv-2,
+.candidate-column--rejected-technical-interview-1,
+.candidate-column--rejected-technical-interview-2,
+.candidate-column--rejected,
+.candidate-column--candidate-not-interested {
+  --col-accent: #f43f5e;
+  --col-bg: rgba(244, 63, 94, 0.18);
+}
+
+.candidate-column--on-hold,
+.candidate-column--withdrawn {
+  --col-accent: #a1a1aa;
+  --col-bg: rgba(161, 161, 170, 0.18);
+}
+
+.entry-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.entry-mode-card {
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: #ffffff;
+  text-align: left;
+  box-shadow: none;
+  transform: none;
+}
+
+.entry-mode-card strong {
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.entry-mode-card span {
+  color: var(--text-muted-2);
+}
+
+.entry-mode-card.is-active {
+  border-color: var(--accent-blue);
+  background: rgba(79, 158, 255, 0.1);
+}
+
 .overview-list__empty {
   color: var(--text-muted-2);
 }
@@ -1014,6 +1228,19 @@ textarea {
 .editor-grid--create > :nth-child(4) {
   grid-column: 2 / 3;
   grid-row: 2 / 3;
+}
+
+.candidate-add-layout {
+  display: grid;
+  grid-template-columns: 1.35fr 0.75fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.candidate-add-main,
+.candidate-add-side {
+  display: grid;
+  gap: 1rem;
 }
 
 .editor-card__head {
@@ -1245,6 +1472,10 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .candidate-board {
+    grid-auto-columns: minmax(240px, 240px);
+  }
+
   .editor-grid,
   .details-grid {
     grid-template-columns: 1fr;
@@ -1262,6 +1493,10 @@ textarea {
   .editor-grid--create > :nth-child(4) {
     grid-column: auto;
     grid-row: auto;
+  }
+
+  .candidate-add-layout {
+    grid-template-columns: 1fr;
   }
 
   .team-grid {
@@ -1295,6 +1530,14 @@ textarea {
 
   .topbar-nav {
     display: none;
+  }
+
+  .candidate-board {
+    grid-auto-columns: minmax(220px, 220px);
+  }
+
+  .entry-mode-grid {
+    grid-template-columns: 1fr;
   }
 
   .skeleton-row {

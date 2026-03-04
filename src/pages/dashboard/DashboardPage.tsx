@@ -1,6 +1,9 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { getCandidates } from '../../features/candidates/candidateAPI'
+import { CANDIDATE_STATUS_LABELS, type CandidateRecord, type CandidateStatus } from '../../features/candidates/candidateTypes'
 import type { JobRecord } from '../../features/jobs/jobTypes'
 import { formatDisplayDateIN } from '../../utils/dateUtils'
+import { getErrorMessage } from '../../utils/errorUtils'
 
 type DashboardPageProps = {
   jobs: JobRecord[]
@@ -18,6 +21,28 @@ function startOfDay(date: Date): Date {
 }
 
 function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
+  const [candidates, setCandidates] = useState<CandidateRecord[]>([])
+  const [candidatesLoading, setCandidatesLoading] = useState(true)
+  const [candidatesError, setCandidatesError] = useState<string | null>(null)
+
+  async function loadCandidateOverview() {
+    setCandidatesLoading(true)
+    setCandidatesError(null)
+    try {
+      const result = await getCandidates()
+      setCandidates(result)
+    } catch (loadError) {
+      const message = getErrorMessage(loadError, 'Unable to load candidate overview')
+      setCandidatesError(message)
+    } finally {
+      setCandidatesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadCandidateOverview()
+  }, [])
+
   const overview = useMemo(() => {
     const now = startOfDay(new Date())
     const daysAhead7 = new Date(now)
@@ -90,6 +115,40 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     return { totalActiveJobs, totalOpenings, fillRate }
   }, [jobs])
 
+  const candidateOverview = useMemo(() => {
+    const stageCounts = new Map<CandidateStatus, number>()
+    candidates.forEach((candidate) => {
+      stageCounts.set(candidate.status, (stageCounts.get(candidate.status) ?? 0) + 1)
+    })
+
+    const topStages = Array.from(stageCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([status, count]) => ({ status, count }))
+
+    const unassigned = candidates.filter((candidate) => !candidate.recruiter || candidate.recruiter.trim().length === 0).length
+    const noNotes = candidates.filter((candidate) => candidate.notes.length === 0).length
+    const noResume = candidates.filter((candidate) => !candidate.resume?.fileName).length
+    const activePipeline = candidates.filter((candidate) => !['Joined', 'Cancelled'].includes(candidate.status)).length
+    const closureRisk = candidates.filter((candidate) =>
+      ['Offer Declined', 'Offer Revoked', 'Rejected Technical Interview 1', 'Rejected Technical Interview 2', 'Candidate Not Interested', 'No Answer', 'Rejected'].includes(
+        candidate.status,
+      ),
+    ).length
+
+    return {
+      total: candidates.length,
+      activePipeline,
+      joined: stageCounts.get('Joined') ?? 0,
+      offered: (stageCounts.get('Offered') ?? 0) + (stageCounts.get('Offer Accepted') ?? 0),
+      noResume,
+      noNotes,
+      unassigned,
+      closureRisk,
+      topStages,
+    }
+  }, [candidates])
+
   return (
     <>
       <section className="page-head">
@@ -136,6 +195,12 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
             </article>
           </section>
 
+          <section className="page-head" style={{ marginTop: '0.25rem' }}>
+            <div>
+              <h2 style={{ margin: 0 }}>Job Management Overview</h2>
+              <p className="subtitle">Role pipeline, aging risk, and department workload across requisitions.</p>
+            </div>
+          </section>
           <section className="overview-grid">
             <article className="overview-card">
               <h3>
@@ -231,6 +296,107 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                     </span>
                   </li>
                 ))}
+              </ul>
+            </article>
+          </section>
+
+          <section className="page-head" style={{ marginTop: '0.25rem' }}>
+            <div>
+              <h2 style={{ margin: 0 }}>Candidate Management Overview</h2>
+              <p className="subtitle">Live hiring funnel, recruiter ownership, and candidate action alerts.</p>
+            </div>
+          </section>
+          <section className="overview-grid">
+            <article className="overview-card">
+              <h3>
+                <span className="material-symbols-rounded">group</span>
+                <span>Candidate Management Overview</span>
+              </h3>
+              {candidatesLoading && <p className="overview-note">Loading candidate overview...</p>}
+              {candidatesError && (
+                <p className="overview-note" style={{ color: 'var(--error)' }}>
+                  {candidatesError} <button onClick={() => void loadCandidateOverview()}>Retry</button>
+                </p>
+              )}
+              {!candidatesLoading && !candidatesError && (
+                <>
+                  <div className="status-split">
+                    <div>
+                      <span>Total Candidates</span>
+                      <strong>{candidateOverview.total}</strong>
+                    </div>
+                    <div>
+                      <span>Active Pipeline</span>
+                      <strong>{candidateOverview.activePipeline}</strong>
+                    </div>
+                    <div>
+                      <span>Offered</span>
+                      <strong>{candidateOverview.offered}</strong>
+                    </div>
+                    <div>
+                      <span>Joined</span>
+                      <strong>{candidateOverview.joined}</strong>
+                    </div>
+                  </div>
+                  <p className="overview-note">
+                    Missing resume: <strong>{candidateOverview.noResume}</strong> | Missing notes:{' '}
+                    <strong>{candidateOverview.noNotes}</strong> | Unassigned recruiter: <strong>{candidateOverview.unassigned}</strong>
+                  </p>
+                </>
+              )}
+            </article>
+
+            <article className="overview-card">
+              <h3>
+                <span className="material-symbols-rounded">stacked_bar_chart</span>
+                <span>Candidate Stage Distribution</span>
+              </h3>
+              <ul className="overview-list overview-list--compact">
+                {!candidatesLoading && candidateOverview.topStages.length === 0 && (
+                  <li className="overview-list__empty">No candidate stage data yet.</li>
+                )}
+                {candidateOverview.topStages.map((item) => (
+                  <li key={item.status}>
+                    <span>{CANDIDATE_STATUS_LABELS[item.status]}</span>
+                    <span>{item.count} candidates</span>
+                  </li>
+                ))}
+              </ul>
+            </article>
+
+            <article className="overview-card">
+              <h3>
+                <span className="material-symbols-rounded">priority_high</span>
+                <span>Candidate Action Alerts</span>
+              </h3>
+              <ul className="overview-list">
+                {!candidatesLoading && candidateOverview.unassigned === 0 && candidateOverview.noResume === 0 && candidateOverview.closureRisk === 0 && (
+                  <li className="overview-list__empty">No urgent candidate actions right now.</li>
+                )}
+                {candidateOverview.unassigned > 0 && (
+                  <li>
+                    <span className="material-symbols-rounded">person_off</span>
+                    <span>
+                      <strong>{candidateOverview.unassigned}</strong> candidates are not assigned to a recruiter.
+                    </span>
+                  </li>
+                )}
+                {candidateOverview.noResume > 0 && (
+                  <li>
+                    <span className="material-symbols-rounded">description</span>
+                    <span>
+                      <strong>{candidateOverview.noResume}</strong> candidates do not have resumes uploaded.
+                    </span>
+                  </li>
+                )}
+                {candidateOverview.closureRisk > 0 && (
+                  <li>
+                    <span className="material-symbols-rounded">report</span>
+                    <span>
+                      <strong>{candidateOverview.closureRisk}</strong> candidates are in risk/rejection stages.
+                    </span>
+                  </li>
+                )}
               </ul>
             </article>
           </section>

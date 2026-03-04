@@ -7,9 +7,12 @@ type LayoutProps = {
   children: ReactNode
   onShowJobs: () => void
   onShowDashboard: () => void
-  activeNav: 'dashboard' | 'jobs'
+  onShowCandidates: () => void
+  onShowUsers?: () => void
+  activeNav: 'dashboard' | 'jobs' | 'candidates' | 'users'
   logoSrc?: string
   role?: string
+  canManageUsers?: boolean
   onLogout?: () => void
   alerts: HeaderAlertItem[]
   alertsLoading: boolean
@@ -26,9 +29,12 @@ function Layout({
   children,
   onShowJobs,
   onShowDashboard,
+  onShowCandidates,
+  onShowUsers,
   activeNav,
   logoSrc,
   role,
+  canManageUsers,
   onLogout,
   alerts,
   alertsLoading,
@@ -47,15 +53,20 @@ function Layout({
       <Sidebar
         onJobsClick={onShowJobs}
         onDashboardClick={onShowDashboard}
+        onCandidatesClick={onShowCandidates}
+        onUsersClick={onShowUsers}
         activeNav={activeNav}
         logoSrc={logoSrc}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         role={role}
+        canManageUsers={canManageUsers}
         onLogout={onLogout}
       />
       <div className="job-module__content">
         <Header
+          role={role}
+          showRoleInHeader={sidebarCollapsed}
           alerts={alerts}
           alertsLoading={alertsLoading}
           alertsError={alertsError}
