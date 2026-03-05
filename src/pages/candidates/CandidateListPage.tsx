@@ -9,6 +9,7 @@ import {
   type InterviewStage,
 } from '../../features/candidates/candidateTypes'
 import { addInterviewToCandidate, getCandidates, updateCandidateStatus } from '../../features/candidates/candidateAPI'
+import { getUsers, type ManagedUser } from '../../features/users/usersAdminAPI'
 import { useToast } from '../../components/common/ToastProvider'
 import { getErrorMessage } from '../../utils/errorUtils'
 import { SkeletonRows } from '../../components/common/Loader'
@@ -65,6 +66,7 @@ function CandidateListPage({
     location: 'Microsoft Teams',
   })
   const [scheduleSaving, setScheduleSaving] = useState(false)
+  const [interviewers, setInterviewers] = useState<ManagedUser[]>([])
   const loadRequestIdRef = useRef(0)
   const boardRef = useRef<HTMLElement | null>(null)
   const BOARD_PAGE_SIZE = 6
@@ -110,6 +112,18 @@ function CandidateListPage({
     }, 280)
     return () => window.clearTimeout(timer)
   }, [searchTerm, jobFilter, statusFilter])
+
+  useEffect(() => {
+    async function loadInterviewers() {
+      try {
+        const users = await getUsers()
+        setInterviewers(users.filter((user) => user.role === 'Interview Panel' && user.isActive))
+      } catch {
+        setInterviewers([])
+      }
+    }
+    void loadInterviewers()
+  }, [])
 
   useEffect(() => {
     setListPage(1)
@@ -627,12 +641,18 @@ function CandidateListPage({
             <input value={scheduleForm.stage} disabled />
           </div>
           <div className="field">
-            <label>Interviewer ID / Email</label>
-            <input
+            <label>Select Interviewer (Interview Panel)</label>
+            <select
               value={scheduleForm.interviewerId}
               onChange={(event) => setScheduleForm((prev) => ({ ...prev, interviewerId: event.target.value }))}
-              placeholder="interviewer@company.com"
-            />
+            >
+              <option value="">Select interviewer</option>
+              {interviewers.map((user) => (
+                <option key={user.id} value={user.id}>
+                  {`${user.firstName} ${user.lastName}`.trim()} ({user.email})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
         <div className="field-row">

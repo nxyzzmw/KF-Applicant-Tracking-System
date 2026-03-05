@@ -12,7 +12,7 @@ import AuthSuccessPage from '../pages/auth/AuthSuccessPage'
 import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage'
 import LoginPage from '../pages/auth/LoginPage'
 import DashboardPage from '../pages/dashboard/DashboardPage'
-import { getRolePermissions, normalizeRole } from '../features/auth/roleAccess'
+import { getRolePermissions, normalizeRole, type RolePermissions } from '../features/auth/roleAccess'
 import AddCandidatePage from '../pages/candidates/AddCandidatePage'
 import CandidateDetailPage from '../pages/candidates/CandidateDetailPage'
 import CandidateListPage from '../pages/candidates/CandidateListPage'
@@ -49,8 +49,10 @@ type AppRoutesProps = {
 
 type UserProfileResponse = {
   role?: string
+  permissions?: Record<string, unknown>
   user?: {
     role?: string
+    permissions?: Record<string, unknown>
   }
 }
 
@@ -63,6 +65,22 @@ type AlertsResponse =
 const AUTH_ME_ENDPOINT = import.meta.env.VITE_AUTH_ME_ENDPOINT ?? ''
 const AUTH_ME_ENDPOINTS = import.meta.env.VITE_AUTH_ME_ENDPOINTS?.trim() ?? ''
 const ALERTS_ENDPOINT = import.meta.env.VITE_ALERTS_ENDPOINT?.trim() ?? ''
+
+function mapBackendPermissionsToFrontend(input?: Record<string, unknown>): RolePermissions | null {
+  if (!input || typeof input !== 'object') return null
+  return {
+    canViewDashboard: Boolean(input.viewDashboard),
+    canViewJobs: Boolean(input.viewJobs),
+    canCreateJob: Boolean(input.createJobs),
+    canEditJob: Boolean(input.editJobs),
+    canDeleteJob: Boolean(input.deleteJobs),
+    canViewCandidates: Boolean(input.viewCandidates),
+    canCreateCandidate: Boolean(input.addCandidates),
+    canEditCandidate: Boolean(input.editCandidates),
+    canManageCandidateStage: Boolean(input.manageCandidateStages),
+    canManageUsers: Boolean(input.manageUsers),
+  }
+}
 
 type RouteState = {
   view: JobView
@@ -213,12 +231,13 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported',
   )
   const [rbacVersion, setRbacVersion] = useState(0)
+  const [permissionOverrides, setPermissionOverrides] = useState<RolePermissions | null>(null)
 
   const hasReportedInitialLoadRef = useRef(false)
   const loadJobsRequestIdRef = useRef(0)
   const autoStatusSyncRef = useRef(false)
   const normalizedRole = normalizeRole(sidebarRole)
-  const permissions = useMemo(() => getRolePermissions(normalizedRole), [normalizedRole, rbacVersion])
+  const permissions = useMemo(() => permissionOverrides ?? getRolePermissions(normalizedRole), [normalizedRole, permissionOverrides, rbacVersion])
 
   useEffect(() => {
     if (isAuthenticated) return
@@ -504,9 +523,17 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
           try {
             const profile = await apiRequest<UserProfileResponse>(endpoint)
             const fetchedRole = profile.role ?? profile.user?.role
+            const fetchedPermissions = mapBackendPermissionsToFrontend(
+              (profile.permissions as Record<string, unknown> | undefined) ??
+                (profile.user?.permissions as Record<string, unknown> | undefined),
+            )
             if (isMounted && fetchedRole && fetchedRole.trim().length > 0) {
               setSidebarRole(fetchedRole)
+              if (fetchedPermissions) setPermissionOverrides(fetchedPermissions)
               return
+            }
+            if (isMounted && fetchedPermissions) {
+              setPermissionOverrides(fetchedPermissions)
             }
           } catch {
             // try next profile endpoint
@@ -521,7 +548,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     return () => {
       isMounted = false
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, rbacVersion])
 
   useEffect(() => {
     if (!isAuthenticated || !selectedJobId || (view !== 'details' && view !== 'edit')) return
@@ -555,6 +582,19 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
 
   useEffect(() => {
     if (!isAuthenticated) return
+    if (view === 'dashboard' && !permissions.canViewDashboard) {
+      if (permissions.canViewJobs) navigateTo('list', { replace: true, jobId: null })
+      else if (permissions.canViewCandidates) navigateTo('candidate-list', { replace: true, candidateJobId: null, candidateId: null })
+      return
+    }
+    if ((view === 'list' || view === 'create' || view === 'details' || view === 'edit') && !permissions.canViewJobs) {
+      navigateTo('dashboard', { replace: true })
+      return
+    }
+    if ((view.startsWith('candidate') || view === 'interviews') && !permissions.canViewCandidates) {
+      navigateTo('dashboard', { replace: true })
+      return
+    }
     if ((view === 'details' || view === 'edit') && !selectedJobId) {
       navigateTo('list', { replace: true, jobId: null })
       return
@@ -566,7 +606,18 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     if (view === 'users' && !permissions.canManageUsers) {
       navigateTo('dashboard', { replace: true })
     }
-  }, [isAuthenticated, navigateTo, permissions.canManageUsers, selectedCandidateId, selectedCandidateJobId, selectedJobId, view])
+  }, [
+    isAuthenticated,
+    navigateTo,
+    permissions.canManageUsers,
+    permissions.canViewCandidates,
+    permissions.canViewDashboard,
+    permissions.canViewJobs,
+    selectedCandidateId,
+    selectedCandidateJobId,
+    selectedJobId,
+    view,
+  ])
 
   const handleCreate = useCallback(
     async (values: JobFormValues) => {
@@ -784,7 +835,13 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         }
         navigateTo('list', { jobId: null })
       }}
-      onShowDashboard={() => navigateTo('dashboard', { jobId: null, candidateId: null, candidateJobId: null })}
+      onShowDashboard={() => {
+        if (!permissions.canViewDashboard) {
+          showToast('Your role has no access to Dashboard.', 'error')
+          return
+        }
+        navigateTo('dashboard', { jobId: null, candidateId: null, candidateJobId: null })
+      }}
       onShowCandidates={() => {
         if (!permissions.canViewCandidates) {
           showToast('Your role has no access to Candidates module.', 'error')
@@ -819,6 +876,10 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
       }
       logoSrc={appLogo}
       role={normalizedRole}
+      canViewDashboard={permissions.canViewDashboard}
+      canViewJobs={permissions.canViewJobs}
+      canViewCandidates={permissions.canViewCandidates}
+      canViewInterviews={permissions.canViewCandidates}
       canManageUsers={permissions.canManageUsers}
       onLogout={handleLogout}
       alerts={alerts}

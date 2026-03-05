@@ -9,6 +9,10 @@ type SidebarProps = {
   collapsed: boolean
   onToggleCollapse: () => void
   role?: string
+  canViewDashboard?: boolean
+  canViewJobs?: boolean
+  canViewCandidates?: boolean
+  canViewInterviews?: boolean
   canManageUsers?: boolean
   onLogout?: () => void
 }
@@ -24,6 +28,10 @@ function Sidebar({
   collapsed,
   onToggleCollapse,
   role,
+  canViewDashboard = true,
+  canViewJobs = true,
+  canViewCandidates = true,
+  canViewInterviews = true,
   canManageUsers,
   onLogout,
 }: SidebarProps) {
@@ -43,22 +51,30 @@ function Sidebar({
       </div>
 
       <nav className="jm-nav" aria-label="Main">
-        <button type="button" className={`jm-nav__item ${activeNav === 'dashboard' ? 'is-active' : ''}`} onClick={onDashboardClick}>
-          <span className="material-symbols-rounded nav-icon">dashboard</span>
-          <span className="nav-label">Dashboard</span>
-        </button>
-        <button type="button" className={`jm-nav__item ${activeNav === 'jobs' ? 'is-active' : ''}`} onClick={onJobsClick}>
-          <span className="material-symbols-rounded nav-icon">work</span>
-          <span className="nav-label">Jobs</span>
-        </button>
-        <button type="button" className={`jm-nav__item ${activeNav === 'candidates' ? 'is-active' : ''}`} onClick={onCandidatesClick}>
-          <span className="material-symbols-rounded nav-icon">group</span>
-          <span className="nav-label">Candidates</span>
-        </button>
-        <button type="button" className={`jm-nav__item ${activeNav === 'interviews' ? 'is-active' : ''}`} onClick={onInterviewsClick}>
-          <span className="material-symbols-rounded nav-icon">event</span>
-          <span className="nav-label">Interviews</span>
-        </button>
+        {canViewDashboard && (
+          <button type="button" className={`jm-nav__item ${activeNav === 'dashboard' ? 'is-active' : ''}`} onClick={onDashboardClick}>
+            <span className="material-symbols-rounded nav-icon">dashboard</span>
+            <span className="nav-label">Dashboard</span>
+          </button>
+        )}
+        {canViewJobs && (
+          <button type="button" className={`jm-nav__item ${activeNav === 'jobs' ? 'is-active' : ''}`} onClick={onJobsClick}>
+            <span className="material-symbols-rounded nav-icon">work</span>
+            <span className="nav-label">Jobs</span>
+          </button>
+        )}
+        {canViewCandidates && (
+          <button type="button" className={`jm-nav__item ${activeNav === 'candidates' ? 'is-active' : ''}`} onClick={onCandidatesClick}>
+            <span className="material-symbols-rounded nav-icon">group</span>
+            <span className="nav-label">Candidates</span>
+          </button>
+        )}
+        {canViewInterviews && (
+          <button type="button" className={`jm-nav__item ${activeNav === 'interviews' ? 'is-active' : ''}`} onClick={onInterviewsClick}>
+            <span className="material-symbols-rounded nav-icon">event</span>
+            <span className="nav-label">Interviews</span>
+          </button>
+        )}
         {canManageUsers && (
           <button type="button" className={`jm-nav__item ${activeNav === 'users' ? 'is-active' : ''}`} onClick={onUsersClick}>
             <span className="material-symbols-rounded nav-icon">admin_panel_settings</span>

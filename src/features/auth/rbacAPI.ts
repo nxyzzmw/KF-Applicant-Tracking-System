@@ -26,11 +26,11 @@ type RbacPolicyApiResponse = {
 const RBAC_BASE_ENDPOINT = (import.meta.env.VITE_RBAC_BASE_ENDPOINT?.trim() || '/rbac').replace(/\/+$/, '')
 
 function getPolicyEndpoints() {
-  return Array.from(new Set([`${RBAC_BASE_ENDPOINT}/policy`, '/rbac/policy', '/policy']))
+  return Array.from(new Set([`${RBAC_BASE_ENDPOINT}/policy`, '/rbac/policy']))
 }
 
 function getResetEndpoints() {
-  return Array.from(new Set([`${RBAC_BASE_ENDPOINT}/policy/reset`, '/rbac/policy/reset', '/policy/reset']))
+  return Array.from(new Set([`${RBAC_BASE_ENDPOINT}/policy/reset`, '/rbac/policy/reset']))
 }
 
 const roleToBackend: Record<AppRole, BackendRoleKey> = {

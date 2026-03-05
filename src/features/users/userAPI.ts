@@ -36,7 +36,7 @@ function normalizeProfile(payload: UserApiPayload): UserProfile {
 }
 
 export async function getMyProfile(): Promise<UserProfile> {
-  const endpoints = ['/me', '/auth/me']
+  const endpoints = ['/auth/me', '/me']
   for (const endpoint of endpoints) {
     try {
       const response = await apiRequest<UserApiPayload>(endpoint)
@@ -49,7 +49,7 @@ export async function getMyProfile(): Promise<UserProfile> {
 }
 
 export async function updateMyProfile(input: { firstName: string; lastName: string; email: string }): Promise<UserProfile> {
-  const endpoints = ['/update', '/auth/update']
+  const endpoints = ['/auth/update', '/update']
   for (const endpoint of endpoints) {
     try {
       const response = await apiRequest<UserApiPayload>(endpoint, {
