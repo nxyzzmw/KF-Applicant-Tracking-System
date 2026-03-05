@@ -81,7 +81,20 @@ function formatEventTime(value?: string): string {
 function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
- 
+
+function startOfWeek(date: Date): Date {
+  const day = date.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  const start = new Date(date)
+  start.setDate(date.getDate() + diff)
+  start.setHours(0, 0, 0, 0)
+  return start
+}
+
+function toWeekKey(date: Date): string {
+  return startOfWeek(date).toISOString()
+}
+
 function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
   const [candidates, setCandidates] = useState<CandidateRecord[]>([])
   const [candidatesLoading, setCandidatesLoading] = useState(true)
@@ -231,24 +244,95 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     }
   }, [candidates])
  
-  const weeklyChartData = useMemo(
-    () =>
-      weeklyStatsData.map((item) => ({
-        ...item,
-        weekLabel: formatWeekLabel(item.weekStart),
-      })),
-    [weeklyStatsData],
-  )
+  const weeklyChartData = useMemo(() => {
+    const fromApi = weeklyStatsData.map((item) => ({
+      ...item,
+      weekLabel: formatWeekLabel(item.weekStart),
+    }))
+
+    if (fromApi.length > 0) return fromApi
+
+    const now = new Date()
+    const currentWeek = startOfWeek(now)
+    const weekStarts: Date[] = []
+    for (let i = 7; i >= 0; i -= 1) {
+      const week = new Date(currentWeek)
+      week.setDate(currentWeek.getDate() - i * 7)
+      weekStarts.push(week)
+    }
+
+    const newCandidatesByWeek = new Map<string, number>()
+    const filledByWeek = new Map<string, number>()
+
+    candidates.forEach((candidate) => {
+      if (candidate.createdAt) {
+        const createdAt = new Date(candidate.createdAt)
+        if (!Number.isNaN(createdAt.getTime())) {
+          const key = toWeekKey(createdAt)
+          newCandidatesByWeek.set(key, (newCandidatesByWeek.get(key) ?? 0) + 1)
+        }
+      }
+
+      candidate.statusHistory.forEach((history) => {
+        if (!history.updatedAt) return
+        if (!['Selected', 'Joined', 'Offer Accepted'].includes(history.status)) return
+        const updatedAt = new Date(history.updatedAt)
+        if (Number.isNaN(updatedAt.getTime())) return
+        const key = toWeekKey(updatedAt)
+        filledByWeek.set(key, (filledByWeek.get(key) ?? 0) + 1)
+      })
+    })
+
+    const openPositionsSnapshot = jobs.reduce((sum, job) => sum + Math.max(job.openings - job.filled, 0), 0)
+    let cumulativeFilled = 0
+
+    return weekStarts.map((weekStart) => {
+      const key = weekStart.toISOString()
+      const weeklyFilled = filledByWeek.get(key) ?? 0
+      cumulativeFilled += weeklyFilled
+      return {
+        weekStart: key,
+        weekLabel: formatWeekLabel(key),
+        newCandidates: newCandidatesByWeek.get(key) ?? 0,
+        filledPositions: cumulativeFilled,
+        openPositions: openPositionsSnapshot,
+      }
+    })
+  }, [weeklyStatsData, candidates, jobs])
  
-  const normalizedFunnelEntries = useMemo(
-    () =>
-      funnelData.map((item) => ({
-        stage: formatStageDisplayLabel(item.stage),
-        key: normalizeStageKey(item.stage),
-        count: item.count,
-      })),
-    [funnelData],
-  )
+  const normalizedFunnelEntries = useMemo(() => {
+    const apiEntries = funnelData.map((item) => ({
+      stage: formatStageDisplayLabel(item.stage),
+      key: normalizeStageKey(item.stage),
+      count: item.count,
+    }))
+
+    const candidateStageCounts = new Map<string, number>()
+    candidates.forEach((candidate) => {
+      const key = normalizeStageKey(candidate.status)
+      candidateStageCounts.set(key, (candidateStageCounts.get(key) ?? 0) + 1)
+    })
+    const candidateEntries = Array.from(candidateStageCounts.entries()).map(([key, count]) => ({
+      stage: key,
+      key,
+      count,
+    }))
+
+    const validStageKeys = new Set<string>()
+    PIPELINE_STAGE_ORDER.forEach((stage) => {
+      validStageKeys.add(normalizeStageKey(stage.label))
+      stage.aliases.forEach((alias) => validStageKeys.add(normalizeStageKey(alias)))
+    })
+
+    const countMappableTotal = (entries: Array<{ key: string; count: number }>) =>
+      entries.reduce((sum, item) => (validStageKeys.has(item.key) ? sum + item.count : sum), 0)
+
+    const apiTotal = countMappableTotal(apiEntries)
+    const candidateTotal = countMappableTotal(candidateEntries)
+
+    if (apiTotal > 0 || candidateTotal === 0) return apiEntries
+    return candidateEntries
+  }, [funnelData, candidates])
  
   const stageAliasToDisplay = useMemo(() => {
     const lookup = new Map<string, (typeof PIPELINE_STAGE_ORDER)[number]['label']>()
@@ -419,7 +503,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 <span>Total Active Jobs</span>
               </p>
               <h3>{stats.totalActiveJobs}</h3>
-              <small>Live from API</small>
+              <small>Updated just now</small>
             </article>
             <article>
               <p>
