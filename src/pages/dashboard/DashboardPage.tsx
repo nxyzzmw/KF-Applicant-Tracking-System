@@ -7,14 +7,14 @@ import type { JobRecord } from '../../features/jobs/jobTypes'
 import { formatDisplayDateIN } from '../../utils/dateUtils'
 import { getErrorMessage } from '../../utils/errorUtils'
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-
+ 
 type DashboardPageProps = {
   jobs: JobRecord[]
   loading: boolean
   error: string | null
   onRetry: () => void
 }
-
+ 
 const PIPELINE_STAGE_ORDER = [
   { label: 'Applied', aliases: ['Applied'] },
   { label: 'Screened', aliases: ['Screened', 'Screening'] },
@@ -25,28 +25,28 @@ const PIPELINE_STAGE_ORDER = [
   { label: 'Selected', aliases: ['Selected'] },
   { label: 'Rejected', aliases: ['Rejected', 'Rejected Technical Interview 1', 'Rejected Technical Interview 2'] },
 ] as const
-
+ 
 const OUTCOME_COLORS = ['#16a34a', '#dc2626', '#2563eb']
-
+ 
 function formatShortDate(value?: string): string {
   return formatDisplayDateIN(value, 'No target date')
 }
-
+ 
 function formatWeekLabel(value: string): string {
   if (!value) return 'Unknown week'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
   return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
 }
-
+ 
 function normalizeStageKey(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 }
-
+ 
 function asChartNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
-
+ 
 function formatStageDisplayLabel(stage: string): string {
   if (!stage.trim()) return stage
   return stage
@@ -55,7 +55,7 @@ function formatStageDisplayLabel(stage: string): string {
     .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
     .join(' ')
 }
-
+ 
 function formatDateTime(value?: string): { date: string; time: string } {
   if (!value) return { date: 'No date', time: 'No time' }
   const date = new Date(value)
@@ -65,7 +65,7 @@ function formatDateTime(value?: string): { date: string; time: string } {
     time: date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
   }
 }
-
+ 
 function formatEventTime(value?: string): string {
   if (!value) return 'Recently'
   const date = new Date(value)
@@ -77,11 +77,11 @@ function formatEventTime(value?: string): string {
     minute: '2-digit',
   })
 }
-
+ 
 function startOfDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
-
+ 
 function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
   const [candidates, setCandidates] = useState<CandidateRecord[]>([])
   const [candidatesLoading, setCandidatesLoading] = useState(true)
@@ -90,7 +90,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
   const [weeklyStatsData, setWeeklyStatsData] = useState<WeeklyHiringStats[]>([])
   const [chartLoading, setChartLoading] = useState(true)
   const [chartError, setChartError] = useState<string | null>(null)
-
+ 
   async function loadCandidateOverview() {
     setCandidatesLoading(true)
     setCandidatesError(null)
@@ -104,7 +104,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       setCandidatesLoading(false)
     }
   }
-
+ 
   async function loadDashboardCharts() {
     setChartLoading(true)
     setChartError(null)
@@ -119,17 +119,17 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       setChartLoading(false)
     }
   }
-
+ 
   useEffect(() => {
     void loadCandidateOverview()
     void loadDashboardCharts()
   }, [])
-
+ 
   const overview = useMemo(() => {
     const now = startOfDay(new Date())
     const daysAhead7 = new Date(now)
     daysAhead7.setDate(now.getDate() + 7)
-
+ 
     const openCount = jobs.filter((job) => job.status === 'Open').length
     const holdCount = jobs.filter((job) => job.status === 'On Hold').length
     const closedCount = jobs.filter((job) => job.status === 'Closed').length
@@ -157,10 +157,10 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       .sort((a, b) => new Date(a.targetClosureDate ?? '').getTime() - new Date(b.targetClosureDate ?? '').getTime())
       .slice(0, 2)
     const missingTargetDates = openPipelineJobs.filter((job) => !job.targetClosureDate).slice(0, 2)
-
+ 
     const pendingOpenings = jobs.reduce((sum, job) => sum + Math.max(job.openings - job.filled, 0), 0)
     const totalFilled = jobs.reduce((sum, job) => sum + job.filled, 0)
-
+ 
     const departmentMap = new Map<string, { roles: number; openings: number }>()
     jobs.forEach((job) => {
       const entry = departmentMap.get(job.department) ?? { roles: 0, openings: 0 }
@@ -172,7 +172,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       .map(([department, values]) => ({ department, ...values }))
       .sort((a, b) => b.openings - a.openings)
       .slice(0, 5)
-
+ 
     return {
       openCount,
       holdCount,
@@ -188,7 +188,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       departments,
     }
   }, [jobs])
-
+ 
   const stats = useMemo(() => {
     const totalActiveJobs = jobs.filter((job) => job.status === 'Open').length
     const totalOpenings = jobs.reduce((sum, job) => sum + job.openings, 0)
@@ -196,18 +196,18 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     const fillRate = totalOpenings === 0 ? 0 : Math.round((totalFilled / totalOpenings) * 100)
     return { totalActiveJobs, totalOpenings, fillRate }
   }, [jobs])
-
+ 
   const candidateOverview = useMemo(() => {
     const stageCounts = new Map<CandidateStatus, number>()
     candidates.forEach((candidate) => {
       stageCounts.set(candidate.status, (stageCounts.get(candidate.status) ?? 0) + 1)
     })
-
+ 
     const topStages = Array.from(stageCounts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8)
       .map(([status, count]) => ({ status, count }))
-
+ 
     const unassigned = candidates.filter((candidate) => !candidate.recruiter || candidate.recruiter.trim().length === 0).length
     const noNotes = candidates.filter((candidate) => candidate.notes.length === 0).length
     const noResume = candidates.filter((candidate) => !candidate.resume?.fileName).length
@@ -217,7 +217,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
         candidate.status,
       ),
     ).length
-
+ 
     return {
       total: candidates.length,
       activePipeline,
@@ -230,7 +230,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       topStages,
     }
   }, [candidates])
-
+ 
   const weeklyChartData = useMemo(
     () =>
       weeklyStatsData.map((item) => ({
@@ -239,7 +239,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       })),
     [weeklyStatsData],
   )
-
+ 
   const normalizedFunnelEntries = useMemo(
     () =>
       funnelData.map((item) => ({
@@ -249,7 +249,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       })),
     [funnelData],
   )
-
+ 
   const stageAliasToDisplay = useMemo(() => {
     const lookup = new Map<string, (typeof PIPELINE_STAGE_ORDER)[number]['label']>()
     PIPELINE_STAGE_ORDER.forEach((stage) => {
@@ -260,22 +260,22 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     })
     return lookup
   }, [])
-
+ 
   const funnelChartData = useMemo(() => {
     const stageCounts = new Map<(typeof PIPELINE_STAGE_ORDER)[number]['label'], number>()
-
+ 
     normalizedFunnelEntries.forEach((item) => {
       const mappedStage = stageAliasToDisplay.get(item.key)
       if (!mappedStage) return
       stageCounts.set(mappedStage, (stageCounts.get(mappedStage) ?? 0) + item.count)
     })
-
+ 
     return PIPELINE_STAGE_ORDER.map((stage) => ({
       stage: stage.label,
       count: stageCounts.get(stage.label) ?? 0,
     }))
   }, [normalizedFunnelEntries, stageAliasToDisplay])
-
+ 
   const outcomeChartData = useMemo(() => {
     const getCountByAliases = (aliases: string[]): number => {
       const aliasKeys = new Set(aliases.map((alias) => normalizeStageKey(alias)))
@@ -283,19 +283,19 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
         .filter((item) => aliasKeys.has(item.key))
         .reduce((sum, item) => sum + item.count, 0)
     }
-
+ 
     const selected = getCountByAliases(['Selected'])
     const rejected = getCountByAliases(['Rejected', 'Rejected Technical Interview 1', 'Rejected Technical Interview 2'])
     const active = getCountByAliases(['Applied', 'Screened', 'Screening', 'Shortlisted', 'Technical Interview 1', 'Technical Interview 2', 'HR Round', 'HR Interview'])
     const total = selected + rejected + active
-
+ 
     return [
       { name: 'Selected', count: selected, percentage: total > 0 ? (selected / total) * 100 : 0 },
       { name: 'Rejected', count: rejected, percentage: total > 0 ? (rejected / total) * 100 : 0 },
       { name: 'Active', count: active, percentage: total > 0 ? (active / total) * 100 : 0 },
     ]
   }, [normalizedFunnelEntries])
-
+ 
   const jobsById = useMemo(() => {
     const map = new Map<string, JobRecord>()
     jobs.forEach((job) => {
@@ -303,7 +303,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     })
     return map
   }, [jobs])
-
+ 
   const upcomingInterviews = useMemo(() => {
     const now = Date.now()
     return candidates
@@ -324,14 +324,14 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       .sort((a, b) => a.timestamp - b.timestamp)
       .slice(0, 5)
   }, [candidates, jobsById])
-
+ 
   const recentActivities = useMemo(() => {
     const events: Array<{ id: string; description: string; subject: string; timestamp?: string; timeValue: number }> = []
-
+ 
     candidates.forEach((candidate) => {
       const candidateLabel = candidate.name || 'Candidate'
       const jobLabel = candidate.jobTitle ?? jobsById.get(candidate.jobID)?.title ?? candidate.role ?? 'Role'
-
+ 
       if (candidate.createdAt) {
         events.push({
           id: `candidate-added-${candidate.id}`,
@@ -341,7 +341,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
           timeValue: new Date(candidate.createdAt).getTime(),
         })
       }
-
+ 
       candidate.statusHistory.forEach((item, index) => {
         if (!item.updatedAt) return
         events.push({
@@ -352,7 +352,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
           timeValue: new Date(item.updatedAt).getTime(),
         })
       })
-
+ 
       candidate.interviews.forEach((item, index) => {
         const eventAt = item.createdAt ?? item.updatedAt ?? item.scheduledAt
         if (!eventAt) return
@@ -364,7 +364,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
           timeValue: new Date(eventAt).getTime(),
         })
       })
-
+ 
       if (candidate.resume?.uploadedAt) {
         events.push({
           id: `resume-uploaded-${candidate.id}-${candidate.resume.uploadedAt}`,
@@ -375,7 +375,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
         })
       }
     })
-
+ 
     jobs.forEach((job) => {
       if (!job.createdAt) return
       events.push({
@@ -386,13 +386,13 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
         timeValue: new Date(job.createdAt).getTime(),
       })
     })
-
+ 
     return events
       .filter((item) => Number.isFinite(item.timeValue))
       .sort((a, b) => b.timeValue - a.timeValue)
       .slice(0, 8)
   }, [candidates, jobs, jobsById])
-
+ 
   return (
     <>
       <section className="page-head">
@@ -402,14 +402,14 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
           <p className="subtitle">Pipeline overview and hiring alerts across all requisitions.</p>
         </div>
       </section>
-
+ 
       {loading && <p className="panel-message">Loading dashboard...</p>}
       {error && (
         <p className="panel-message panel-message--error">
           {error} <button onClick={onRetry}>Retry</button>
         </p>
       )}
-
+ 
       {!loading && !error && (
         <>
           <section className="stats-grid">
@@ -438,7 +438,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
               <small>Filled vs total openings</small>
             </article>
           </section>
-
+ 
           <section className="page-head" style={{ marginTop: '0.25rem' }}>
             <div>
               <h2 style={{ margin: 0 }}>Job Management Overview</h2>
@@ -477,7 +477,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 Pending openings: <strong>{overview.pendingOpenings}</strong> | Filled: <strong>{overview.totalFilled}</strong>
               </p>
             </article>
-
+ 
             <article className="overview-card">
               <h3>
                 <span className="material-symbols-rounded">notifications_active</span>
@@ -524,7 +524,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 ))}
               </ul>
             </article>
-
+ 
             <article className="overview-card">
               <h3>
                 <span className="material-symbols-rounded">domain</span>
@@ -543,7 +543,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
               </ul>
             </article>
           </section>
-
+ 
           <section className="page-head" style={{ marginTop: '0.25rem' }}>
             <div>
               <h2 style={{ margin: 0 }}>Candidate Management Overview</h2>
@@ -589,7 +589,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 </>
               )}
             </article>
-
+ 
             <article className="overview-card">
               <h3>
                 <span className="material-symbols-rounded">stacked_bar_chart</span>
@@ -607,7 +607,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 ))}
               </ul>
             </article>
-
+ 
             <article className="overview-card">
               <h3>
                 <span className="material-symbols-rounded">priority_high</span>
@@ -644,7 +644,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
               </ul>
             </article>
           </section>
-
+ 
           <section className="overview-grid dashboard-analytics-layout" style={{ marginTop: '0.8rem' }}>
             <article className="overview-card">
               <h3>
@@ -678,7 +678,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 </div>
               )}
             </article>
-
+ 
             <article className="overview-card">
               <h3>
                 <span className="material-symbols-rounded">pie_chart</span>
@@ -726,7 +726,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 </div>
               )}
             </article>
-
+ 
             <article className="overview-card dashboard-analytics-card--full">
               <h3>
                 <span className="material-symbols-rounded">monitoring</span>
@@ -757,7 +757,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
               )}
             </article>
           </section>
-
+ 
           <section className="overview-grid dashboard-charts-grid" style={{ marginTop: '0.8rem' }}>
             <article className="overview-card">
               <h3>
@@ -785,7 +785,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 </ul>
               )}
             </article>
-
+ 
             <article className="overview-card">
               <h3>
                 <span className="material-symbols-rounded">history</span>
@@ -815,5 +815,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     </>
   )
 }
-
+ 
 export default DashboardPage
+ 
+ 

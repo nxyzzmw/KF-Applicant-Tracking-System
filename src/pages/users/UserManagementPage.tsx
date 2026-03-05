@@ -141,6 +141,10 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
       showToast('Enter a valid email address.', 'error')
       return
     }
+    if (form.password.trim().length < 8) {
+      showToast('Password must be at least 8 characters.', 'error')
+      return
+    }
 
     setCreating(true)
     try {

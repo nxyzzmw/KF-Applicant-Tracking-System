@@ -119,27 +119,22 @@ export async function createUser(input: CreateUserInput): Promise<ManagedUser> {
     email: input.email.trim(),
     password: input.password,
   }
-  const bodyWithRole = {
-    ...registerBody,
-    role: toBackendRole(input.role),
-  }
 
   const configured = USER_REGISTER_ENDPOINTS.split(',').map((value: string) => value.trim()).filter((value: string) => value.length > 0)
+  // Register route belongs under auth in current backend. Avoid probing /users or /register
+  // because those return noisy 404/HTML responses in this project.
   const endpoints = uniqueEndpoints([
     USER_REGISTER_ENDPOINT,
     ...configured,
     `${AUTH_API_BASE}/register`,
     '/auth/register',
-    '/register',
-    '/users',
   ])
   let lastError: unknown = null
   for (const endpoint of endpoints) {
     try {
-      const useRegisterPayload = endpoint.toLowerCase().includes('/register')
       const response = await apiRequest<CreateUserApiResponse>(endpoint, {
         method: 'POST',
-        body: useRegisterPayload ? registerBody : bodyWithRole,
+        body: registerBody,
       })
       const objectResponse = response as Exclude<CreateUserApiResponse, UserApiRecord>
       const record =
