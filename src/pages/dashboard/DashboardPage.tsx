@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getCandidates } from '../../features/candidates/candidateAPI'
 import { CANDIDATE_STATUS_LABELS, type CandidateRecord, type CandidateStatus } from '../../features/candidates/candidateTypes'
+import { getDashboardFunnel, getDashboardWeeklyStats } from '../../features/dashboard/dashboardAPI'
+import type { FunnelStageStats, WeeklyHiringStats } from '../../features/dashboard/dashboardTypes'
 import type { JobRecord } from '../../features/jobs/jobTypes'
 import { formatDisplayDateIN } from '../../utils/dateUtils'
 import { getErrorMessage } from '../../utils/errorUtils'
+import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
 type DashboardPageProps = {
   jobs: JobRecord[]
@@ -12,8 +15,67 @@ type DashboardPageProps = {
   onRetry: () => void
 }
 
+const PIPELINE_STAGE_ORDER = [
+  { label: 'Applied', aliases: ['Applied'] },
+  { label: 'Screened', aliases: ['Screened', 'Screening'] },
+  { label: 'Shortlisted', aliases: ['Shortlisted'] },
+  { label: 'Technical Intv 1', aliases: ['Technical Interview 1', 'Technical Intv 1', 'Technical Round 1'] },
+  { label: 'Technical Intv 2', aliases: ['Technical Interview 2', 'Technical Intv 2', 'Technical Round 2'] },
+  { label: 'HR Round', aliases: ['HR Round', 'HR Interview'] },
+  { label: 'Selected', aliases: ['Selected'] },
+  { label: 'Rejected', aliases: ['Rejected', 'Rejected Technical Interview 1', 'Rejected Technical Interview 2'] },
+] as const
+
+const OUTCOME_COLORS = ['#16a34a', '#dc2626', '#2563eb']
+
 function formatShortDate(value?: string): string {
   return formatDisplayDateIN(value, 'No target date')
+}
+
+function formatWeekLabel(value: string): string {
+  if (!value) return 'Unknown week'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+}
+
+function normalizeStageKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function asChartNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function formatStageDisplayLabel(stage: string): string {
+  if (!stage.trim()) return stage
+  return stage
+    .trim()
+    .split(/\s+/)
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(' ')
+}
+
+function formatDateTime(value?: string): { date: string; time: string } {
+  if (!value) return { date: 'No date', time: 'No time' }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return { date: value, time: '-' }
+  return {
+    date: date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+    time: date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+  }
+}
+
+function formatEventTime(value?: string): string {
+  if (!value) return 'Recently'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 function startOfDay(date: Date): Date {
@@ -24,6 +86,10 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
   const [candidates, setCandidates] = useState<CandidateRecord[]>([])
   const [candidatesLoading, setCandidatesLoading] = useState(true)
   const [candidatesError, setCandidatesError] = useState<string | null>(null)
+  const [funnelData, setFunnelData] = useState<FunnelStageStats[]>([])
+  const [weeklyStatsData, setWeeklyStatsData] = useState<WeeklyHiringStats[]>([])
+  const [chartLoading, setChartLoading] = useState(true)
+  const [chartError, setChartError] = useState<string | null>(null)
 
   async function loadCandidateOverview() {
     setCandidatesLoading(true)
@@ -39,8 +105,24 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     }
   }
 
+  async function loadDashboardCharts() {
+    setChartLoading(true)
+    setChartError(null)
+    try {
+      const [funnel, weeklyStats] = await Promise.all([getDashboardFunnel(), getDashboardWeeklyStats()])
+      setFunnelData(funnel)
+      setWeeklyStatsData(weeklyStats)
+    } catch (loadError) {
+      const message = getErrorMessage(loadError, 'Unable to load dashboard charts')
+      setChartError(message)
+    } finally {
+      setChartLoading(false)
+    }
+  }
+
   useEffect(() => {
     void loadCandidateOverview()
+    void loadDashboardCharts()
   }, [])
 
   const overview = useMemo(() => {
@@ -148,6 +230,168 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       topStages,
     }
   }, [candidates])
+
+  const weeklyChartData = useMemo(
+    () =>
+      weeklyStatsData.map((item) => ({
+        ...item,
+        weekLabel: formatWeekLabel(item.weekStart),
+      })),
+    [weeklyStatsData],
+  )
+
+  const normalizedFunnelEntries = useMemo(
+    () =>
+      funnelData.map((item) => ({
+        stage: formatStageDisplayLabel(item.stage),
+        key: normalizeStageKey(item.stage),
+        count: item.count,
+      })),
+    [funnelData],
+  )
+
+  const stageAliasToDisplay = useMemo(() => {
+    const lookup = new Map<string, (typeof PIPELINE_STAGE_ORDER)[number]['label']>()
+    PIPELINE_STAGE_ORDER.forEach((stage) => {
+      stage.aliases.forEach((alias) => {
+        lookup.set(normalizeStageKey(alias), stage.label)
+      })
+      lookup.set(normalizeStageKey(stage.label), stage.label)
+    })
+    return lookup
+  }, [])
+
+  const funnelChartData = useMemo(() => {
+    const stageCounts = new Map<(typeof PIPELINE_STAGE_ORDER)[number]['label'], number>()
+
+    normalizedFunnelEntries.forEach((item) => {
+      const mappedStage = stageAliasToDisplay.get(item.key)
+      if (!mappedStage) return
+      stageCounts.set(mappedStage, (stageCounts.get(mappedStage) ?? 0) + item.count)
+    })
+
+    return PIPELINE_STAGE_ORDER.map((stage) => ({
+      stage: stage.label,
+      count: stageCounts.get(stage.label) ?? 0,
+    }))
+  }, [normalizedFunnelEntries, stageAliasToDisplay])
+
+  const outcomeChartData = useMemo(() => {
+    const getCountByAliases = (aliases: string[]): number => {
+      const aliasKeys = new Set(aliases.map((alias) => normalizeStageKey(alias)))
+      return normalizedFunnelEntries
+        .filter((item) => aliasKeys.has(item.key))
+        .reduce((sum, item) => sum + item.count, 0)
+    }
+
+    const selected = getCountByAliases(['Selected'])
+    const rejected = getCountByAliases(['Rejected', 'Rejected Technical Interview 1', 'Rejected Technical Interview 2'])
+    const active = getCountByAliases(['Applied', 'Screened', 'Screening', 'Shortlisted', 'Technical Interview 1', 'Technical Interview 2', 'HR Round', 'HR Interview'])
+    const total = selected + rejected + active
+
+    return [
+      { name: 'Selected', count: selected, percentage: total > 0 ? (selected / total) * 100 : 0 },
+      { name: 'Rejected', count: rejected, percentage: total > 0 ? (rejected / total) * 100 : 0 },
+      { name: 'Active', count: active, percentage: total > 0 ? (active / total) * 100 : 0 },
+    ]
+  }, [normalizedFunnelEntries])
+
+  const jobsById = useMemo(() => {
+    const map = new Map<string, JobRecord>()
+    jobs.forEach((job) => {
+      map.set(job.id, job)
+    })
+    return map
+  }, [jobs])
+
+  const upcomingInterviews = useMemo(() => {
+    const now = Date.now()
+    return candidates
+      .flatMap((candidate) =>
+        (candidate.interviews ?? []).map((interview, index) => {
+          const interviewDate = interview.scheduledAt ? new Date(interview.scheduledAt) : null
+          return {
+            id: interview._id ?? `${candidate.id}-${index}`,
+            candidateName: candidate.name,
+            jobTitle: candidate.jobTitle ?? jobsById.get(candidate.jobID)?.title ?? candidate.role ?? 'Unknown role',
+            scheduledAt: interview.scheduledAt,
+            timestamp: interviewDate && !Number.isNaN(interviewDate.getTime()) ? interviewDate.getTime() : Number.MAX_SAFE_INTEGER,
+            mode: interview.meetingLink ? 'Online' : interview.location ? 'Offline' : 'TBD',
+          }
+        }),
+      )
+      .filter((item) => item.scheduledAt && item.timestamp >= now && item.timestamp !== Number.MAX_SAFE_INTEGER)
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(0, 5)
+  }, [candidates, jobsById])
+
+  const recentActivities = useMemo(() => {
+    const events: Array<{ id: string; description: string; subject: string; timestamp?: string; timeValue: number }> = []
+
+    candidates.forEach((candidate) => {
+      const candidateLabel = candidate.name || 'Candidate'
+      const jobLabel = candidate.jobTitle ?? jobsById.get(candidate.jobID)?.title ?? candidate.role ?? 'Role'
+
+      if (candidate.createdAt) {
+        events.push({
+          id: `candidate-added-${candidate.id}`,
+          description: 'Candidate added',
+          subject: `${candidateLabel} • ${jobLabel}`,
+          timestamp: candidate.createdAt,
+          timeValue: new Date(candidate.createdAt).getTime(),
+        })
+      }
+
+      candidate.statusHistory.forEach((item, index) => {
+        if (!item.updatedAt) return
+        events.push({
+          id: `stage-updated-${candidate.id}-${index}-${item.updatedAt}`,
+          description: `Candidate stage updated to ${CANDIDATE_STATUS_LABELS[item.status]}`,
+          subject: candidateLabel,
+          timestamp: item.updatedAt,
+          timeValue: new Date(item.updatedAt).getTime(),
+        })
+      })
+
+      candidate.interviews.forEach((item, index) => {
+        const eventAt = item.createdAt ?? item.updatedAt ?? item.scheduledAt
+        if (!eventAt) return
+        events.push({
+          id: `interview-${candidate.id}-${index}-${eventAt}`,
+          description: 'Interview scheduled',
+          subject: `${candidateLabel} • ${item.stage}`,
+          timestamp: eventAt,
+          timeValue: new Date(eventAt).getTime(),
+        })
+      })
+
+      if (candidate.resume?.uploadedAt) {
+        events.push({
+          id: `resume-uploaded-${candidate.id}-${candidate.resume.uploadedAt}`,
+          description: 'Resume uploaded',
+          subject: candidateLabel,
+          timestamp: candidate.resume.uploadedAt,
+          timeValue: new Date(candidate.resume.uploadedAt).getTime(),
+        })
+      }
+    })
+
+    jobs.forEach((job) => {
+      if (!job.createdAt) return
+      events.push({
+        id: `job-created-${job.id}-${job.createdAt}`,
+        description: 'Job created',
+        subject: job.title,
+        timestamp: job.createdAt,
+        timeValue: new Date(job.createdAt).getTime(),
+      })
+    })
+
+    return events
+      .filter((item) => Number.isFinite(item.timeValue))
+      .sort((a, b) => b.timeValue - a.timeValue)
+      .slice(0, 8)
+  }, [candidates, jobs, jobsById])
 
   return (
     <>
@@ -325,10 +569,10 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                       <span>Total Candidates</span>
                       <strong>{candidateOverview.total}</strong>
                     </div>
-                    <div>
+                    {/* <div>
                       <span>Active Pipeline</span>
                       <strong>{candidateOverview.activePipeline}</strong>
-                    </div>
+                    </div> */}
                     <div>
                       <span>Offered</span>
                       <strong>{candidateOverview.offered}</strong>
@@ -398,6 +642,172 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                   </li>
                 )}
               </ul>
+            </article>
+          </section>
+
+          <section className="overview-grid dashboard-analytics-layout" style={{ marginTop: '0.8rem' }}>
+            <article className="overview-card">
+              <h3>
+                <span className="material-symbols-rounded">bar_chart</span>
+                <span>Hiring Pipeline (Stage Bar Chart)</span>
+              </h3>
+              {chartLoading && <p className="overview-note">Loading hiring funnel...</p>}
+              {chartError && (
+                <p className="overview-note" style={{ color: 'var(--error)' }}>
+                  {chartError} <button onClick={() => void loadDashboardCharts()}>Retry</button>
+                </p>
+              )}
+              {!chartLoading && !chartError && funnelChartData.every((item) => item.count === 0) && <p className="overview-note">No funnel data available.</p>}
+              {!chartLoading && !chartError && funnelChartData.length > 0 && (
+                <div className="dashboard-chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={funnelChartData} layout="vertical" margin={{ top: 8, right: 24, bottom: 8, left: 12 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} />
+                      <YAxis type="category" dataKey="stage" width={126} tick={{ fontSize: 12 }} />
+                      <Tooltip
+                        formatter={(value) => [`${asChartNumber(value)}`, 'Candidates']}
+                        labelFormatter={(label) => `Stage: ${label}`}
+                      />
+                      <Legend />
+                      <Bar dataKey="count" name="Candidates" fill="#2563eb" radius={[0, 8, 8, 0]} barSize={22}>
+                        <LabelList dataKey="count" position="right" />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </article>
+
+            <article className="overview-card">
+              <h3>
+                <span className="material-symbols-rounded">pie_chart</span>
+                <span>Hiring Outcome</span>
+              </h3>
+              {chartLoading && <p className="overview-note">Loading hiring outcome...</p>}
+              {chartError && (
+                <p className="overview-note" style={{ color: 'var(--error)' }}>
+                  {chartError} <button onClick={() => void loadDashboardCharts()}>Retry</button>
+                </p>
+              )}
+              {!chartLoading && !chartError && outcomeChartData.every((item) => item.count === 0) && <p className="overview-note">No outcome data available.</p>}
+              {!chartLoading && !chartError && outcomeChartData.length > 0 && (
+                <div className="dashboard-chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Tooltip
+                        formatter={(value, _name, item) => {
+                          const percent = asChartNumber((item?.payload as { percentage?: number } | undefined)?.percentage)
+                          return [`${asChartNumber(value)} (${percent.toFixed(1)}%)`, 'Candidates']
+                        }}
+                      />
+                      <Legend />
+                      <Pie
+                        data={outcomeChartData}
+                        dataKey="count"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        outerRadius={96}
+                        label={(props) => {
+                          const payload = (props.payload ?? {}) as { name?: string; count?: number; percentage?: number }
+                          const name = payload.name ?? ''
+                          const count = asChartNumber(payload.count)
+                          const percentage = asChartNumber(payload.percentage)
+                          return `${name}: ${count} (${percentage.toFixed(1)}%)`
+                        }}
+                      >
+                        {outcomeChartData.map((item, index) => (
+                          <Cell key={item.name} fill={OUTCOME_COLORS[index % OUTCOME_COLORS.length]} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </article>
+
+            <article className="overview-card dashboard-analytics-card--full">
+              <h3>
+                <span className="material-symbols-rounded">monitoring</span>
+                <span>Weekly Hiring Trend</span>
+              </h3>
+              {chartLoading && <p className="overview-note">Loading weekly trend...</p>}
+              {chartError && (
+                <p className="overview-note" style={{ color: 'var(--error)' }}>
+                  {chartError} <button onClick={() => void loadDashboardCharts()}>Retry</button>
+                </p>
+              )}
+              {!chartLoading && !chartError && weeklyChartData.length === 0 && <p className="overview-note">No weekly statistics available.</p>}
+              {!chartLoading && !chartError && weeklyChartData.length > 0 && (
+                <div className="dashboard-chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={weeklyChartData} margin={{ top: 8, right: 18, left: 0, bottom: 8 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="weekLabel" />
+                      <YAxis allowDecimals={false} />
+                      <Tooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="newCandidates" name="New Candidates" stroke="#f97316" strokeWidth={2} />
+                      <Line type="monotone" dataKey="filledPositions" name="Filled Positions" stroke="#16a34a" strokeWidth={2} />
+                      <Line type="monotone" dataKey="openPositions" name="Open Positions" stroke="#0ea5e9" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </article>
+          </section>
+
+          <section className="overview-grid dashboard-charts-grid" style={{ marginTop: '0.8rem' }}>
+            <article className="overview-card">
+              <h3>
+                <span className="material-symbols-rounded">event_upcoming</span>
+                <span>Upcoming Interviews</span>
+              </h3>
+              {candidatesLoading && <p className="overview-note">Loading upcoming interviews...</p>}
+              {candidatesError && <p className="overview-note" style={{ color: 'var(--error)' }}>{candidatesError}</p>}
+              {!candidatesLoading && !candidatesError && (
+                <ul className="overview-list">
+                  {upcomingInterviews.length === 0 && <li className="overview-list__empty">No upcoming interviews.</li>}
+                  {upcomingInterviews.map((item) => {
+                    const schedule = formatDateTime(item.scheduledAt)
+                    return (
+                      <li key={item.id}>
+                        <span className="material-symbols-rounded">event</span>
+                        <span>
+                          <strong>{item.candidateName}</strong> • {item.jobTitle}
+                          <br />
+                          {schedule.date} at {schedule.time} • {item.mode}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </article>
+
+            <article className="overview-card">
+              <h3>
+                <span className="material-symbols-rounded">history</span>
+                <span>Recent Activities</span>
+              </h3>
+              {candidatesLoading && <p className="overview-note">Loading recent activities...</p>}
+              {candidatesError && <p className="overview-note" style={{ color: 'var(--error)' }}>{candidatesError}</p>}
+              {!candidatesLoading && !candidatesError && (
+                <ul className="overview-list">
+                  {recentActivities.length === 0 && <li className="overview-list__empty">No activity captured yet.</li>}
+                  {recentActivities.map((item) => (
+                    <li key={item.id}>
+                      <span className="material-symbols-rounded">bolt</span>
+                      <span>
+                        <strong>{item.description}</strong> • {item.subject}
+                        <br />
+                        {formatEventTime(item.timestamp)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </article>
           </section>
         </>

@@ -52,6 +52,7 @@ export type JobRecord = {
   skillsRequired?: string[]
   agingDays: number
   candidatesApplied: number
+  createdAt?: string
 }
 
 export type JobFormValues = {
