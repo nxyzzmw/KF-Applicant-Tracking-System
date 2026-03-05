@@ -13,6 +13,10 @@ type LayoutProps = {
   activeNav: 'dashboard' | 'jobs' | 'candidates' | 'interviews' | 'users'
   logoSrc?: string
   role?: string
+  canViewDashboard?: boolean
+  canViewJobs?: boolean
+  canViewCandidates?: boolean
+  canViewInterviews?: boolean
   canManageUsers?: boolean
   onLogout?: () => void
   alerts: HeaderAlertItem[]
@@ -36,6 +40,10 @@ function Layout({
   activeNav,
   logoSrc,
   role,
+  canViewDashboard,
+  canViewJobs,
+  canViewCandidates,
+  canViewInterviews,
   canManageUsers,
   onLogout,
   alerts,
@@ -63,6 +71,10 @@ function Layout({
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         role={role}
+        canViewDashboard={canViewDashboard}
+        canViewJobs={canViewJobs}
+        canViewCandidates={canViewCandidates}
+        canViewInterviews={canViewInterviews}
         canManageUsers={canManageUsers}
         onLogout={onLogout}
       />
