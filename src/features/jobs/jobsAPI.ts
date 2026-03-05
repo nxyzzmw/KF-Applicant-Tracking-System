@@ -77,6 +77,7 @@ function normalizeJob(apiJob: JobApiRecord): JobRecord {
     skillsRequired: Array.isArray(apiJob.skillsRequired) ? apiJob.skillsRequired : [],
     agingDays,
     candidatesApplied,
+    createdAt: apiJob.createdAt,
   }
 }
 

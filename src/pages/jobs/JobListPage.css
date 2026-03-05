@@ -907,6 +907,25 @@ tbody td span {
   color: var(--text-muted-2);
 }
 
+.dashboard-charts-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.dashboard-analytics-layout {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.dashboard-analytics-card--full {
+  grid-column: 1 / -1;
+}
+
+.dashboard-chart {
+  width: 100%;
+  min-height: 320px;
+  margin-top: 0.25rem;
+}
+
 .candidate-board {
   display: grid;
   grid-auto-flow: column;
@@ -1470,6 +1489,18 @@ textarea {
 
   .overview-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-charts-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-analytics-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-analytics-card--full {
+    grid-column: auto;
   }
 
   .candidate-board {
