@@ -281,7 +281,7 @@ function JobListPage({
   }
 
   return (
-    <div className="job-management-layout">
+    <>
       <section className="page-head">
         <div>
           <p className="breadcrumb">Jobs / Management</p>
@@ -657,7 +657,7 @@ function JobListPage({
         </section>
       )}
 
-    </div>
+    </>
   )
 }
 
