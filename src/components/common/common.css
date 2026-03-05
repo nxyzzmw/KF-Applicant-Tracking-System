@@ -204,6 +204,27 @@
   text-align: center;
 }
 
+.table-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-blue);
+}
+
+.candidate-toolbar-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.candidate-toolbar-select {
+  min-height: 36px;
+  border: 1px solid var(--border-default);
+  border-radius: 10px;
+  padding: 0 0.6rem;
+  background: #fff;
+  color: var(--text-body);
+}
+
 .ui-pagination {
   display: flex;
   align-items: center;

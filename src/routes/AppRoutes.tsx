@@ -7,6 +7,7 @@ import Layout from '../components/layout/Layout'
 import { createJob, deleteJob, getJobById, getJobs, updateJob, updateJobStatus } from '../features/jobs/jobsAPI'
 import type { JobsQueryParams } from '../features/jobs/jobsAPI'
 import type { JobFormValues, JobRecord } from '../features/jobs/jobTypes'
+import { getCandidates } from '../features/candidates/candidateAPI'
 import AuthSuccessPage from '../pages/auth/AuthSuccessPage'
 import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage'
 import LoginPage from '../pages/auth/LoginPage'
@@ -15,6 +16,7 @@ import { getRolePermissions, normalizeRole } from '../features/auth/roleAccess'
 import AddCandidatePage from '../pages/candidates/AddCandidatePage'
 import CandidateDetailPage from '../pages/candidates/CandidateDetailPage'
 import CandidateListPage from '../pages/candidates/CandidateListPage'
+import InterviewQueuePage from '../pages/interviews/InterviewQueuePage'
 import CreateJobPage from '../pages/jobs/CreateJobPage'
 import EditJobPage from '../pages/jobs/EditJobPage'
 import JobDetailsPage from '../pages/jobs/JobDetailsPage'
@@ -27,7 +29,17 @@ import { toApiDateValue } from '../utils/dateUtils'
 import appLogo from '../assets/kf-logo.png'
 import './AppRoutes.css'
 
-type JobView = 'dashboard' | 'list' | 'create' | 'details' | 'edit' | 'candidate-list' | 'candidate-add' | 'candidate-details' | 'users'
+type JobView =
+  | 'dashboard'
+  | 'list'
+  | 'create'
+  | 'details'
+  | 'edit'
+  | 'candidate-list'
+  | 'candidate-add'
+  | 'candidate-details'
+  | 'interviews'
+  | 'users'
 type AuthPage = 'login' | 'forgot' | 'success'
 
 type AppRoutesProps = {
@@ -49,10 +61,66 @@ type AlertsResponse =
   | undefined
 
 const AUTH_ME_ENDPOINT = import.meta.env.VITE_AUTH_ME_ENDPOINT ?? ''
+const AUTH_ME_ENDPOINTS = import.meta.env.VITE_AUTH_ME_ENDPOINTS?.trim() ?? ''
+const ALERTS_ENDPOINT = import.meta.env.VITE_ALERTS_ENDPOINT?.trim() ?? ''
+
+type RouteState = {
+  view: JobView
+  jobId?: string | null
+  candidateId?: string | null
+  candidateJobId?: string | null
+}
 
 function getInitialAuthPage(): AuthPage {
   const normalizedPath = window.location.pathname.replace(/\/+$/, '') || '/'
   return normalizedPath === '/reset-password' ? 'forgot' : 'login'
+}
+
+function parseRouteState(): RouteState {
+  const normalizedPath = window.location.pathname.replace(/\/+$/, '') || '/'
+  const params = new URLSearchParams(window.location.search)
+  const jobId = params.get('jobId')
+  const candidateId = params.get('candidateId')
+  const candidateJobId = params.get('candidateJobId') ?? params.get('jobId')
+
+  if (normalizedPath === '/dashboard' || normalizedPath === '/') return { view: 'dashboard' }
+  if (normalizedPath === '/jobs') return { view: 'list' }
+  if (normalizedPath === '/jobs/create') return { view: 'create' }
+  if (normalizedPath === '/jobs/details') return { view: 'details', jobId }
+  if (normalizedPath === '/jobs/edit') return { view: 'edit', jobId }
+  if (normalizedPath === '/candidates') return { view: 'candidate-list', candidateJobId }
+  if (normalizedPath === '/candidates/add') return { view: 'candidate-add', candidateJobId }
+  if (normalizedPath === '/candidates/details') return { view: 'candidate-details', candidateId }
+  if (normalizedPath === '/interviews') return { view: 'interviews' }
+  if (normalizedPath === '/users') return { view: 'users' }
+  return { view: 'dashboard' }
+}
+
+function buildRoutePath(state: RouteState): string {
+  const params = new URLSearchParams()
+  if (state.view === 'details' || state.view === 'edit') {
+    if (state.jobId) params.set('jobId', state.jobId)
+  }
+  if (state.view === 'candidate-list' || state.view === 'candidate-add') {
+    if (state.candidateJobId) params.set('candidateJobId', state.candidateJobId)
+  }
+  if (state.view === 'candidate-details') {
+    if (state.candidateId) params.set('candidateId', state.candidateId)
+  }
+  const query = params.toString()
+
+  let pathname = '/dashboard'
+  if (state.view === 'list') pathname = '/jobs'
+  if (state.view === 'create') pathname = '/jobs/create'
+  if (state.view === 'details') pathname = '/jobs/details'
+  if (state.view === 'edit') pathname = '/jobs/edit'
+  if (state.view === 'candidate-list') pathname = '/candidates'
+  if (state.view === 'candidate-add') pathname = '/candidates/add'
+  if (state.view === 'candidate-details') pathname = '/candidates/details'
+  if (state.view === 'interviews') pathname = '/interviews'
+  if (state.view === 'users') pathname = '/users'
+
+  return query.length > 0 ? `${pathname}?${query}` : pathname
 }
 
 function randomToken(length: number): string {
@@ -106,6 +174,16 @@ function toApiPayload(values: JobFormValues, reqId?: string) {
   }
 }
 
+function isJobExpired(targetClosureDate?: string): boolean {
+  if (!targetClosureDate) return false
+  const target = new Date(targetClosureDate)
+  if (Number.isNaN(target.getTime())) return false
+  const today = new Date()
+  const targetDay = new Date(target.getFullYear(), target.getMonth(), target.getDate()).getTime()
+  const todayDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime()
+  return targetDay < todayDay
+}
+
 function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesProps) {
   const { showToast } = useToast()
   const { confirm } = useConfirm()
@@ -138,6 +216,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
 
   const hasReportedInitialLoadRef = useRef(false)
   const loadJobsRequestIdRef = useRef(0)
+  const autoStatusSyncRef = useRef(false)
   const normalizedRole = normalizeRole(sidebarRole)
   const permissions = useMemo(() => getRolePermissions(normalizedRole), [normalizedRole, rbacVersion])
 
@@ -162,14 +241,52 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
   }, [])
 
   const navigateTo = useCallback(
-    (nextView: JobView) => {
+    (
+      nextView: JobView,
+      options?: {
+        replace?: boolean
+        jobId?: string | null
+        candidateId?: string | null
+        candidateJobId?: string | null
+      },
+    ) => {
       onNavigationLoadingChange?.(true)
       setActionError(null)
+      if (options?.jobId !== undefined) setSelectedJobId(options.jobId)
+      if (options?.candidateId !== undefined) setSelectedCandidateId(options.candidateId)
+      if (options?.candidateJobId !== undefined) setSelectedCandidateJobId(options.candidateJobId)
       setView(nextView)
+      const path = buildRoutePath({
+        view: nextView,
+        jobId: options?.jobId !== undefined ? options.jobId : selectedJobId,
+        candidateId: options?.candidateId !== undefined ? options.candidateId : selectedCandidateId,
+        candidateJobId: options?.candidateJobId !== undefined ? options.candidateJobId : selectedCandidateJobId,
+      })
+      window.history[options?.replace ? 'replaceState' : 'pushState']({}, '', path)
       window.setTimeout(() => onNavigationLoadingChange?.(false), 520)
     },
-    [onNavigationLoadingChange],
+    [onNavigationLoadingChange, selectedCandidateId, selectedCandidateJobId, selectedJobId],
   )
+
+  const syncFromLocation = useCallback(() => {
+    const parsed = parseRouteState()
+    setView(parsed.view)
+    setSelectedJobId(parsed.jobId ?? null)
+    setSelectedCandidateId(parsed.candidateId ?? null)
+    setSelectedCandidateJobId(parsed.candidateJobId ?? null)
+  }, [])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    syncFromLocation()
+  }, [isAuthenticated, syncFromLocation])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const handler = () => syncFromLocation()
+    window.addEventListener('popstate', handler)
+    return () => window.removeEventListener('popstate', handler)
+  }, [isAuthenticated, syncFromLocation])
 
   const loadJobs = useCallback(
     async (query: JobsQueryParams = {}) => {
@@ -178,9 +295,32 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
       setLoading(true)
       setListError(null)
       try {
-        const result = await getJobs(query)
+        const [jobResult, candidateResult] = await Promise.allSettled([getJobs(query), getCandidates()])
+        if (jobResult.status !== 'fulfilled') {
+          throw jobResult.reason
+        }
+        const result = jobResult.value
+        const candidates = candidateResult.status === 'fulfilled' ? candidateResult.value : []
+        const metricsByJob = candidates.reduce<Record<string, { applied: number; joined: number }>>((acc, candidate) => {
+          if (!candidate.jobID) return acc
+          const current = acc[candidate.jobID] ?? { applied: 0, joined: 0 }
+          current.applied += 1
+          if (candidate.status === 'Joined') current.joined += 1
+          acc[candidate.jobID] = current
+          return acc
+        }, {})
+        const mergedResult = result.map((job) => {
+          const metrics = metricsByJob[job.id]
+          if (!metrics) return job
+          const joined = Math.min(metrics.joined, job.openings || metrics.joined)
+          return {
+            ...job,
+            filled: joined,
+            candidatesApplied: metrics.applied,
+          }
+        })
         if (loadJobsRequestIdRef.current === requestId) {
-          setJobs(result)
+          setJobs(mergedResult)
         }
       } catch (loadError) {
         const message = getErrorMessage(loadError, 'Unable to load jobs')
@@ -208,6 +348,38 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     }),
     [jobListSearchTerm, jobListDepartmentFilter, jobListStatusFilter],
   )
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    if (!permissions.canEditJob) return
+    if (autoStatusSyncRef.current) return
+
+    const toSync = jobs
+      .map((job) => {
+        const isExpired = isJobExpired(job.targetClosureDate)
+        const isFull = job.openings > 0 && job.filled >= job.openings
+        if (isExpired && job.status !== 'Closed') return { jobId: job.id, nextStatus: 'Closed' as JobRecord['status'] }
+        if (isFull && job.status !== 'Filled') return { jobId: job.id, nextStatus: 'Filled' as JobRecord['status'] }
+        return null
+      })
+      .filter((item): item is { jobId: string; nextStatus: JobRecord['status'] } => Boolean(item))
+
+    if (toSync.length === 0) return
+
+    autoStatusSyncRef.current = true
+    setJobs((prev) =>
+      prev.map((job) => {
+        const target = toSync.find((item) => item.jobId === job.id)
+        return target ? { ...job, status: target.nextStatus } : job
+      }),
+    )
+
+    void Promise.allSettled(toSync.map((item) => updateJobStatus(item.jobId, item.nextStatus)))
+      .then(() => loadJobs(view === 'list' ? activeListQuery : {}))
+      .finally(() => {
+        autoStatusSyncRef.current = false
+      })
+  }, [activeListQuery, isAuthenticated, jobs, loadJobs, permissions.canEditJob, view])
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -246,8 +418,13 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
   const loadAlerts = useCallback(async () => {
     setAlertsLoading(true)
     setAlertsError(null)
+    if (!ALERTS_ENDPOINT) {
+      setAlerts(fallbackAlerts)
+      setAlertsLoading(false)
+      return
+    }
     try {
-      const response = await apiRequest<AlertsResponse>('/alerts')
+      const response = await apiRequest<AlertsResponse>(ALERTS_ENDPOINT)
       const payload = Array.isArray(response) ? response : (response?.data ?? response?.alerts ?? [])
       const normalized = payload.map((alert, index) => ({
         id: alert.id || `alert-${index}`,
@@ -279,6 +456,19 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     setAlertPermission(permission)
   }, [])
 
+  const pushAlert = useCallback((title: string, message: string) => {
+    setAlerts((prev) => [
+      {
+        id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        title,
+        message,
+        createdAt: new Date().toISOString(),
+        read: false,
+      },
+      ...prev,
+    ])
+  }, [])
+
   useEffect(() => {
     if (!isAuthenticated || alertPermission !== 'granted') return
     const unread = alerts.filter((alert) => !alert.read).length
@@ -299,7 +489,16 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     let isMounted = true
 
     async function loadUserRole() {
-      const endpoints = [AUTH_ME_ENDPOINT, '/me', '/auth/me'].filter((value, index, all) => value && all.indexOf(value) === index)
+      const localRole = localStorage.getItem('role')
+      if (localRole && localRole.trim().length > 0) {
+        setSidebarRole(localRole)
+      }
+      const configured = AUTH_ME_ENDPOINTS
+        .split(',')
+        .map((value: string) => value.trim())
+        .filter((value: string) => value.length > 0)
+      const endpoints = [AUTH_ME_ENDPOINT, ...configured].filter((value, index, all) => value && all.indexOf(value) === index)
+      if (endpoints.length === 0) return
       try {
         for (const endpoint of endpoints) {
           try {
@@ -330,14 +529,20 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     let isMounted = true
 
     async function loadDetails() {
+      const localMatch = jobs.find((job) => job.id === jobId) ?? null
+      if (isMounted && localMatch) {
+        setSelectedJob(localMatch)
+      }
       setDetailsLoading(true)
       setActionError(null)
       try {
         const result = await getJobById(jobId)
         if (isMounted) setSelectedJob(result)
       } catch (detailsError) {
-        const message = getErrorMessage(detailsError, 'Unable to load job details')
-        if (isMounted) setActionError(message)
+        if (isMounted && !localMatch) {
+          const message = getErrorMessage(detailsError, 'Unable to load job details')
+          setActionError(message)
+        }
       } finally {
         if (isMounted) setDetailsLoading(false)
       }
@@ -346,7 +551,22 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
     return () => {
       isMounted = false
     }
-  }, [isAuthenticated, selectedJobId, view])
+  }, [isAuthenticated, jobs, selectedJobId, view])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    if ((view === 'details' || view === 'edit') && !selectedJobId) {
+      navigateTo('list', { replace: true, jobId: null })
+      return
+    }
+    if (view === 'candidate-details' && !selectedCandidateId) {
+      navigateTo('candidate-list', { replace: true, candidateJobId: selectedCandidateJobId })
+      return
+    }
+    if (view === 'users' && !permissions.canManageUsers) {
+      navigateTo('dashboard', { replace: true })
+    }
+  }, [isAuthenticated, navigateTo, permissions.canManageUsers, selectedCandidateId, selectedCandidateJobId, selectedJobId, view])
 
   const handleCreate = useCallback(
     async (values: JobFormValues) => {
@@ -364,7 +584,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         await loadJobs()
         setSelectedJobId(created.id)
         setSelectedJob(created)
-        navigateTo('details')
+        navigateTo('details', { jobId: created.id })
       } catch (createError) {
         const message = getErrorMessage(createError, 'Unable to create job')
         setActionError(message)
@@ -389,7 +609,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         const updated = await updateJob(selectedJobId, toApiPayload(values))
         await loadJobs()
         setSelectedJob(updated)
-        navigateTo('details')
+        navigateTo('details', { jobId: updated.id })
       } catch (updateError) {
         const message = getErrorMessage(updateError, 'Unable to update job')
         setActionError(message)
@@ -437,6 +657,18 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
 
   const handleStatusChange = useCallback(
     async (job: JobRecord, status: JobRecord['status']) => {
+      if (status === 'Filled') {
+        showToast('Filled status is automatic when joined candidates reach openings.', 'error')
+        return
+      }
+      if (isJobExpired(job.targetClosureDate)) {
+        showToast('Expired jobs are locked. Status cannot be changed.', 'error')
+        return
+      }
+      if (job.openings > 0 && job.filled >= job.openings) {
+        showToast('All openings are filled. Status is managed automatically.', 'error')
+        return
+      }
       if (!permissions.canEditJob) {
         showToast('You do not have access to update job status.', 'error')
         return
@@ -461,31 +693,41 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
 
   const openDetails = useCallback(
     (jobId: string) => {
-      setSelectedJobId(jobId)
-      navigateTo('details')
+      const localMatch = jobs.find((job) => job.id === jobId) ?? null
+      setSelectedJob(localMatch)
+      navigateTo('details', { jobId })
     },
-    [navigateTo],
+    [jobs, navigateTo],
   )
 
   const openEdit = useCallback(
     (jobId: string) => {
-      setSelectedJobId(jobId)
-      navigateTo('edit')
+      const targetJob = jobs.find((item) => item.id === jobId)
+      if (targetJob && isJobExpired(targetJob.targetClosureDate)) {
+        showToast('Expired jobs are locked. Edit is not allowed.', 'error')
+        return
+      }
+      const localMatch = jobs.find((job) => job.id === jobId) ?? null
+      setSelectedJob(localMatch)
+      navigateTo('edit', { jobId })
     },
-    [navigateTo],
+    [jobs, navigateTo],
   )
 
   const openCandidatesForJob = useCallback(
     (jobId: string) => {
+      const targetJob = jobs.find((item) => item.id === jobId)
+      if (targetJob && isJobExpired(targetJob.targetClosureDate)) {
+        showToast('Expired jobs are locked. Candidate workflow is not allowed.', 'error')
+        return
+      }
       if (!permissions.canViewCandidates) {
         showToast('You do not have access to candidate management.', 'error')
         return
       }
-      setSelectedCandidateJobId(jobId)
-      setSelectedCandidateId(null)
-      navigateTo('candidate-list')
+      navigateTo('candidate-list', { candidateJobId: jobId, candidateId: null })
     },
-    [navigateTo, permissions.canViewCandidates, showToast],
+    [jobs, navigateTo, permissions.canViewCandidates, showToast],
   )
 
   const handleLogout = useCallback(() => {
@@ -516,6 +758,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
             onSignInSuccess={() => {
               setIsAuthenticated(true)
               setView('dashboard')
+              window.history.replaceState({}, '', '/dashboard')
             }}
           />
         )}
@@ -539,16 +782,22 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
           showToast('Your role has read restrictions for Jobs module.', 'error')
           return
         }
-        navigateTo('list')
+        navigateTo('list', { jobId: null })
       }}
-      onShowDashboard={() => navigateTo('dashboard')}
+      onShowDashboard={() => navigateTo('dashboard', { jobId: null, candidateId: null, candidateJobId: null })}
       onShowCandidates={() => {
         if (!permissions.canViewCandidates) {
           showToast('Your role has no access to Candidates module.', 'error')
           return
         }
-        setSelectedCandidateJobId(null)
-        navigateTo('candidate-list')
+        navigateTo('candidate-list', { candidateJobId: null, candidateId: null })
+      }}
+      onShowInterviews={() => {
+        if (!permissions.canViewCandidates) {
+          showToast('Your role has no access to interview queue.', 'error')
+          return
+        }
+        navigateTo('interviews')
       }}
       onShowUsers={() => {
         if (!permissions.canManageUsers) {
@@ -557,7 +806,17 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         }
         navigateTo('users')
       }}
-      activeNav={view === 'dashboard' ? 'dashboard' : view === 'users' ? 'users' : view.startsWith('candidate') ? 'candidates' : 'jobs'}
+      activeNav={
+        view === 'dashboard'
+          ? 'dashboard'
+          : view === 'users'
+            ? 'users'
+            : view === 'interviews'
+              ? 'interviews'
+              : view.startsWith('candidate')
+                ? 'candidates'
+                : 'jobs'
+      }
       logoSrc={appLogo}
       role={normalizedRole}
       canManageUsers={permissions.canManageUsers}
@@ -592,7 +851,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
             setJobListStatusFilter('all')
           }}
           onRetry={() => void loadJobs(activeListQuery)}
-          onCreate={() => (permissions.canCreateJob ? navigateTo('create') : showToast('You do not have access to create jobs.', 'error'))}
+          onCreate={() => (permissions.canCreateJob ? navigateTo('create', { jobId: null }) : showToast('You do not have access to create jobs.', 'error'))}
           onView={openDetails}
           onEdit={openEdit}
           onManageCandidates={openCandidatesForJob}
@@ -605,17 +864,18 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         />
       )}
       {view === 'create' && permissions.canCreateJob && (
-        <CreateJobPage saving={saving} error={actionError} onCancel={() => navigateTo('list')} onSubmit={handleCreate} />
+        <CreateJobPage saving={saving} error={actionError} onCancel={() => navigateTo('list', { jobId: null })} onSubmit={handleCreate} />
       )}
       {view === 'details' && (
         <JobDetailsPage
-          job={selectedJob}
+          job={selectedJob ?? (selectedJobId ? jobs.find((job) => job.id === selectedJobId) ?? null : null)}
           loading={detailsLoading}
           error={actionError}
-          onBack={() => navigateTo('list')}
-          onEdit={() => navigateTo('edit')}
+          onBack={() => navigateTo('list', { jobId: null })}
+          onEdit={() => navigateTo('edit', { jobId: selectedJobId })}
           onManageCandidates={openCandidatesForJob}
-          canEditJob={permissions.canEditJob}
+          canEditJob={permissions.canEditJob && !isJobExpired(selectedJob?.targetClosureDate)}
+          canManageCandidates={!isJobExpired(selectedJob?.targetClosureDate)}
         />
       )}
       {view === 'edit' && permissions.canEditJob && (
@@ -624,7 +884,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
           loading={detailsLoading}
           saving={saving}
           error={actionError}
-          onBack={() => navigateTo('details')}
+          onBack={() => navigateTo('details', { jobId: selectedJobId })}
           onSubmit={handleUpdate}
         />
       )}
@@ -635,16 +895,20 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
           canCreateCandidate={permissions.canCreateCandidate}
           canEditCandidate={permissions.canEditCandidate}
           canManageCandidateStage={permissions.canManageCandidateStage}
+          onInterviewAlert={pushAlert}
+          onCandidateDataChanged={() => {
+            void loadJobs()
+          }}
           onAddCandidate={() =>
-            permissions.canCreateCandidate ? navigateTo('candidate-add') : showToast('You do not have access to add candidates.', 'error')
+            permissions.canCreateCandidate
+              ? navigateTo('candidate-add', { candidateJobId: selectedCandidateJobId })
+              : showToast('You do not have access to add candidates.', 'error')
           }
           onViewCandidate={(candidateId) => {
-            setSelectedCandidateId(candidateId)
-            navigateTo('candidate-details')
+            navigateTo('candidate-details', { candidateId })
           }}
           onEditCandidate={(candidateId) => {
-            setSelectedCandidateId(candidateId)
-            navigateTo('candidate-details')
+            navigateTo('candidate-details', { candidateId })
           }}
         />
       )}
@@ -652,10 +916,10 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         <AddCandidatePage
           jobs={jobs}
           initialJobId={selectedCandidateJobId}
-          onBack={() => navigateTo('candidate-list')}
+          onBack={() => navigateTo('candidate-list', { candidateJobId: selectedCandidateJobId })}
           onCreated={(candidateId) => {
-            setSelectedCandidateId(candidateId)
-            navigateTo('candidate-details')
+            void loadJobs()
+            navigateTo('candidate-details', { candidateId })
           }}
         />
       )}
@@ -663,9 +927,19 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         <CandidateDetailPage
           candidateId={selectedCandidateId}
           jobs={jobs}
-          onBack={() => navigateTo('candidate-list')}
+          onBack={() => navigateTo('candidate-list', { candidateJobId: selectedCandidateJobId })}
           canEdit={permissions.canEditCandidate}
           canManageStage={permissions.canManageCandidateStage}
+          onInterviewAlert={pushAlert}
+          onCandidateDataChanged={() => {
+            void loadJobs()
+          }}
+        />
+      )}
+      {view === 'interviews' && (
+        <InterviewQueuePage
+          role={normalizedRole}
+          onInterviewAlert={pushAlert}
         />
       )}
       {view === 'users' && permissions.canManageUsers && (

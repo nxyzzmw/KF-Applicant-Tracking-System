@@ -41,8 +41,13 @@ function parseBaseUrls(): string[] {
     : []
 
   const single = envBaseUrl ? [envBaseUrl] : []
-  const defaults = ['http://10.0.4.111:5000/api']
-  const combined = [...explicitList, ...single, ...defaults]
+  // If a single base URL is configured, use only that to avoid noisy multi-host retries.
+  if (single.length > 0) {
+    return Array.from(new Set(single.map((url) => url.replace(/\/+$/, ''))))
+  }
+
+  const defaults = explicitList.length === 0 ? ['/api'] : []
+  const combined = [...explicitList, ...defaults]
 
   // Use explicit API bases only. Avoid auto-fallback to non-/api bases because
   // backend often serves HTML there, which breaks JSON parsing for API calls.
@@ -219,6 +224,10 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
       const apiError = new ApiError(message, response.status, parsed, classifyErrorType(response.status))
       lastError = apiError
+      // 404 means route does not exist on this backend; avoid noisy host probing.
+      if (response.status === 404) {
+        throw apiError
+      }
       if (hasMoreBases && isHtmlPayload) continue
       throw apiError
     }

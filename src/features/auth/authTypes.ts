@@ -3,6 +3,7 @@ export type AuthUser = {
   firstName: string
   lastName: string
   email: string
+  role?: string
 }
 
 export type LoginRequest = {
@@ -28,6 +29,13 @@ export type LoginResponse = {
   accessToken: string
   refreshToken: string
   user: AuthUser
+  role?: string
+  data?: {
+    user?: Partial<AuthUser> & { role?: string }
+    role?: string
+    accessToken?: string
+    refreshToken?: string
+  }
 }
 
 export type ForgotPasswordResponse = {

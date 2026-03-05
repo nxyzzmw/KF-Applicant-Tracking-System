@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { getApiErrorMessage, login } from '../../features/auth/authAPI'
 import { setTokens } from '../../services/tokenService'
+import { normalizeRole } from '../../features/auth/roleAccess'
 
 type LoginPageProps = {
   onForgotPassword: () => void
@@ -24,7 +25,25 @@ function LoginPage({ onForgotPassword, onSignInSuccess }: LoginPageProps) {
         password,
       })
 
-      setTokens(response.accessToken, response.refreshToken)
+      const payload = response.data ?? response
+      const accessToken = payload.accessToken ?? response.accessToken
+      const refreshToken = payload.refreshToken ?? response.refreshToken
+      setTokens(accessToken, refreshToken)
+
+      const user = payload.user ?? response.user
+      const fetchedRole = user?.role ?? payload.role ?? response.role
+      if (user) {
+        localStorage.setItem(
+          'user',
+          JSON.stringify({
+            ...user,
+            role: fetchedRole ?? user.role ?? 'HR Recruiter',
+          }),
+        )
+      }
+      if (fetchedRole) {
+        localStorage.setItem('role', normalizeRole(fetchedRole))
+      }
       onSignInSuccess()
     } catch (requestError) {
       setError(getApiErrorMessage(requestError))

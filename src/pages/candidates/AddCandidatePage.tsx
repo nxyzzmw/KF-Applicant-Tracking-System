@@ -28,6 +28,10 @@ const defaultValues: CandidateFormValues = {
   feedback: '',
 }
 
+type FieldErrors = Partial<Record<keyof CandidateFormValues | 'resume', string>>
+
+const RECRUITER_SOURCE_OPTIONS = ['LinkedIn', 'Naukri', 'Indeed', 'Referral', 'Company Career Page', 'Campus Drive', 'Consultancy', 'Other']
+
 function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidatePageProps) {
   const { showToast } = useToast()
   const [form, setForm] = useState<CandidateFormValues>({ ...defaultValues, jobID: initialJobId ?? '' })
@@ -38,9 +42,13 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
   const [initialNote, setInitialNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
 
   const jobOptions = useMemo(
-    () => jobs.map((job) => ({ id: job.id, label: `${job.title} (${job.reqId})` })),
+    () =>
+      jobs
+        .filter((job) => job.status === 'Open' && job.filled < job.openings)
+        .map((job) => ({ id: job.id, label: `${job.title} (${job.reqId})` })),
     [jobs],
   )
 
@@ -51,18 +59,31 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
 
   function updateField<K extends keyof CandidateFormValues>(key: K, value: CandidateFormValues[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
+    setFieldErrors((prev) => ({ ...prev, [key]: undefined }))
   }
 
   async function parseResume(file: File) {
-    if (!file.type.startsWith('text/')) {
-      setParserMessage('Auto parser currently supports text resumes. Please complete fields manually.')
+    const allowedExt = ['.pdf', '.doc', '.docx']
+    const fileName = file.name.toLowerCase()
+    const isSupported = allowedExt.some((ext) => fileName.endsWith(ext))
+    if (!isSupported) {
+      setFieldErrors((prev) => ({ ...prev, resume: 'Only Word and PDF resumes are supported.' }))
+      setParserMessage('Resume parser supports only PDF or Word files.')
       return
     }
+    setFieldErrors((prev) => ({ ...prev, resume: undefined }))
+
+    const rawText = await file.arrayBuffer()
+    const text = new TextDecoder('utf-8').decode(rawText).replace(/\s+/g, ' ')
+    if (!text.trim()) {
+      setParserMessage('Could not parse text from this file. Please fill all fields manually.')
+      return
+    }
+
     setParserMessage('Resume parsed. Review and complete missing fields manually.')
-    const text = await file.text()
     const email = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] ?? ''
     const phone = text.match(/(\+?\d[\d\s-]{8,}\d)/)?.[0] ?? ''
-    const firstLine = text.split('\n').map((line) => line.trim()).find((line) => line.length > 3) ?? ''
+    const firstLine = text.split(/[\n\r.]/).map((line) => line.trim()).find((line) => line.length > 3) ?? ''
     const detectedSkills = ['React', 'Node', 'TypeScript', 'JavaScript', 'MongoDB', 'Python']
       .filter((skill) => new RegExp(`\\b${skill}\\b`, 'i').test(text))
       .join(', ')
@@ -74,36 +95,56 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
       skills: detectedSkills,
     }
     setParsedPreview(parsed)
-    setForm((prev) => ({
-      ...prev,
-      name: prev.name || firstLine,
-      email: prev.email || email,
-      contactDetails: prev.contactDetails || phone,
-      skills: prev.skills || detectedSkills,
-    }))
+    setForm((prev) => {
+      const next = {
+        ...prev,
+        name: prev.name || firstLine,
+        email: prev.email || email,
+        contactDetails: prev.contactDetails || phone,
+        skills: prev.skills || detectedSkills,
+      }
+      setFieldErrors((current) => ({
+        ...current,
+        name: next.name.trim() ? undefined : 'Candidate name is required',
+        email: next.email.trim() ? undefined : 'Email is required',
+        contactDetails: next.contactDetails.trim() ? undefined : 'Contact details are required',
+        skills: next.skills.trim() ? undefined : 'Skills are required',
+      }))
+      return next
+    })
   }
 
-  function validate(values: CandidateFormValues): string | null {
-    if (!values.name.trim()) return 'Candidate name is required'
-    if (!values.jobID.trim()) return 'Role selection is required'
-    if (!values.email.trim()) return 'Email is required'
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) return 'Enter a valid email address'
-    if (!values.contactDetails.trim()) return 'Contact details are required'
-    if (!values.location.trim()) return 'Location is required'
-    if (!values.skills.trim()) return 'Skills are required'
-    if (!values.experience.trim()) return 'Experience is required'
-    if (!values.education.trim()) return 'Education is required'
-    if (!values.noticePeriod.trim()) return 'Notice period is required'
-    if (Number(values.experience) < 0) return 'Experience cannot be negative'
-    if (Number(values.noticePeriod) < 0) return 'Notice period cannot be negative'
-    return null
+  function validate(values: CandidateFormValues): FieldErrors {
+    const next: FieldErrors = {}
+    if (!values.name.trim()) next.name = 'Candidate name is required'
+    if (!values.jobID.trim()) next.jobID = 'Role selection is required'
+    else {
+      const selectedJob = jobs.find((job) => job.id === values.jobID)
+      if (!selectedJob) next.jobID = 'Selected role is invalid'
+      else if (selectedJob.status !== 'Open' || selectedJob.filled >= selectedJob.openings) {
+        next.jobID = 'Candidate can apply only for open roles with available openings'
+      }
+    }
+    if (!values.email.trim()) next.email = 'Email is required'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) next.email = 'Enter a valid email address'
+    if (!values.contactDetails.trim()) next.contactDetails = 'Contact details are required'
+    if (!values.location.trim()) next.location = 'Location is required'
+    if (!values.skills.trim()) next.skills = 'Skills are required'
+    if (!values.experience.trim()) next.experience = 'Experience is required'
+    if (!values.education.trim()) next.education = 'Education is required'
+    if (!values.noticePeriod.trim()) next.noticePeriod = 'Notice period is required'
+    if (values.experience.trim() && Number(values.experience) < 0) next.experience = 'Experience cannot be negative'
+    if (values.noticePeriod.trim() && Number(values.noticePeriod) < 0) next.noticePeriod = 'Notice period cannot be negative'
+    if (entryMode === 'resume' && !resumeFile) next.resume = 'Resume file is required in resume mode'
+    return next
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const validationError = validate(form)
-    if (validationError) {
-      setError(validationError)
+    const validationErrors = validate(form)
+    setFieldErrors(validationErrors)
+    if (Object.values(validationErrors).some(Boolean)) {
+      setError('Please correct the highlighted fields.')
       return
     }
 
@@ -171,7 +212,7 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
             onClick={() => setEntryMode('resume')}
           >
             <strong>Resume Assisted</strong>
-            <span>Upload resume first, then verify and complete the fields.</span>
+            <span>Upload PDF/Word resume and auto-fill detected fields.</span>
           </button>
         </div>
       </section>
@@ -185,40 +226,69 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
           <div className="field-row">
             <div className="field">
               <label>Name</label>
-              <input value={form.name} onChange={(event) => updateField('name', event.target.value)} />
+              <input className={fieldErrors.name ? 'input-error' : ''} value={form.name} onChange={(event) => updateField('name', event.target.value)} />
+              {fieldErrors.name && <small className="field-error">{fieldErrors.name}</small>}
             </div>
             <div className="field">
               <label>Email</label>
-              <input type="email" value={form.email} onChange={(event) => updateField('email', event.target.value)} />
+              <input
+                className={fieldErrors.email ? 'input-error' : ''}
+                type="email"
+                value={form.email}
+                onChange={(event) => updateField('email', event.target.value)}
+              />
+              {fieldErrors.email && <small className="field-error">{fieldErrors.email}</small>}
             </div>
           </div>
           <div className="field-row">
             <div className="field">
               <label>Contact</label>
-              <input value={form.contactDetails} onChange={(event) => updateField('contactDetails', event.target.value)} />
+              <input
+                className={fieldErrors.contactDetails ? 'input-error' : ''}
+                value={form.contactDetails}
+                onChange={(event) => updateField('contactDetails', event.target.value)}
+              />
+              {fieldErrors.contactDetails && <small className="field-error">{fieldErrors.contactDetails}</small>}
             </div>
             <div className="field">
               <label>Location</label>
-              <input value={form.location} onChange={(event) => updateField('location', event.target.value)} />
+              <input className={fieldErrors.location ? 'input-error' : ''} value={form.location} onChange={(event) => updateField('location', event.target.value)} />
+              {fieldErrors.location && <small className="field-error">{fieldErrors.location}</small>}
             </div>
           </div>
           <div className="field-row">
             <div className="field">
               <label>Experience (Years)</label>
-              <input type="number" min={0} value={form.experience} onChange={(event) => updateField('experience', event.target.value)} />
+              <input
+                className={fieldErrors.experience ? 'input-error' : ''}
+                type="number"
+                min={0}
+                value={form.experience}
+                onChange={(event) => updateField('experience', event.target.value)}
+              />
+              {fieldErrors.experience && <small className="field-error">{fieldErrors.experience}</small>}
             </div>
             <div className="field">
               <label>Notice Period (Days)</label>
-              <input type="number" min={0} value={form.noticePeriod} onChange={(event) => updateField('noticePeriod', event.target.value)} />
+              <input
+                className={fieldErrors.noticePeriod ? 'input-error' : ''}
+                type="number"
+                min={0}
+                value={form.noticePeriod}
+                onChange={(event) => updateField('noticePeriod', event.target.value)}
+              />
+              {fieldErrors.noticePeriod && <small className="field-error">{fieldErrors.noticePeriod}</small>}
             </div>
           </div>
           <div className="field">
             <label>Education</label>
-            <input value={form.education} onChange={(event) => updateField('education', event.target.value)} />
+            <input className={fieldErrors.education ? 'input-error' : ''} value={form.education} onChange={(event) => updateField('education', event.target.value)} />
+            {fieldErrors.education && <small className="field-error">{fieldErrors.education}</small>}
           </div>
           <div className="field">
             <label>Skills (comma separated)</label>
-            <input value={form.skills} onChange={(event) => updateField('skills', event.target.value)} />
+            <input className={fieldErrors.skills ? 'input-error' : ''} value={form.skills} onChange={(event) => updateField('skills', event.target.value)} />
+            {fieldErrors.skills && <small className="field-error">{fieldErrors.skills}</small>}
           </div>
           </article>
 
@@ -228,7 +298,7 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
             </h3>
             <div className="field">
               <label>Role Applied For</label>
-              <select value={form.jobID} onChange={(event) => updateField('jobID', event.target.value)}>
+              <select className={fieldErrors.jobID ? 'input-error' : ''} value={form.jobID} onChange={(event) => updateField('jobID', event.target.value)}>
                 <option value="">Select role</option>
                 {jobOptions.map((job) => (
                   <option key={job.id} value={job.id}>
@@ -236,6 +306,7 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
                   </option>
                 ))}
               </select>
+              {fieldErrors.jobID && <small className="field-error">{fieldErrors.jobID}</small>}
             </div>
             <div className="field-row">
               <div className="field">
@@ -249,8 +320,15 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
                 </select>
               </div>
               <div className="field">
-                <label>Recruiter</label>
-                <input value={form.recruiter} onChange={(event) => updateField('recruiter', event.target.value)} />
+                <label>Recruiter Source</label>
+                <select value={form.recruiter} onChange={(event) => updateField('recruiter', event.target.value)}>
+                  <option value="">Select source</option>
+                  {RECRUITER_SOURCE_OPTIONS.map((source) => (
+                    <option key={source} value={source}>
+                      {source}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="field">
@@ -273,14 +351,23 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
               <label>Upload Resume</label>
               <input
                 type="file"
-                accept=".pdf,.doc,.docx,.txt"
+                accept=".pdf,.doc,.docx"
                 onChange={(event) => {
                   const file = event.target.files?.[0] ?? null
                   setResumeFile(file)
-                  if (file) void parseResume(file)
+                  if (!file) {
+                    setFieldErrors((prev) => ({ ...prev, resume: entryMode === 'resume' ? 'Resume file is required in resume mode' : undefined }))
+                    return
+                  }
+                  if (entryMode !== 'resume') {
+                    setParserMessage('Resume parsing works only in Resume Assisted mode.')
+                    return
+                  }
+                  void parseResume(file)
                 }}
               />
-              <small className="editor-muted">Upload optional. Parsed fields auto-populate the form.</small>
+              <small className="editor-muted">Only Word/PDF files are supported. Parsing runs only after upload in Resume Assisted mode.</small>
+              {fieldErrors.resume && <small className="field-error">{fieldErrors.resume}</small>}
             </div>
             {resumeFile && (
               <p className="overview-note">

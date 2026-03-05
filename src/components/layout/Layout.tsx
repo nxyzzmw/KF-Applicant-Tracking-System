@@ -8,8 +8,9 @@ type LayoutProps = {
   onShowJobs: () => void
   onShowDashboard: () => void
   onShowCandidates: () => void
+  onShowInterviews?: () => void
   onShowUsers?: () => void
-  activeNav: 'dashboard' | 'jobs' | 'candidates' | 'users'
+  activeNav: 'dashboard' | 'jobs' | 'candidates' | 'interviews' | 'users'
   logoSrc?: string
   role?: string
   canManageUsers?: boolean
@@ -30,6 +31,7 @@ function Layout({
   onShowJobs,
   onShowDashboard,
   onShowCandidates,
+  onShowInterviews,
   onShowUsers,
   activeNav,
   logoSrc,
@@ -54,6 +56,7 @@ function Layout({
         onJobsClick={onShowJobs}
         onDashboardClick={onShowDashboard}
         onCandidatesClick={onShowCandidates}
+        onInterviewsClick={onShowInterviews}
         onUsersClick={onShowUsers}
         activeNav={activeNav}
         logoSrc={logoSrc}

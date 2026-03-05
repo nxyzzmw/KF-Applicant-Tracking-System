@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   addInterviewToCandidate,
-  addNoteToCandidate,
   getCandidateInterviews,
   getCandidateTimeline,
   getCandidateById,
@@ -18,6 +17,7 @@ import {
   type CandidateInterview,
   type CandidateFormValues,
   type CandidateRecord,
+  type CandidateStatus,
   type CandidateTimelineEvent,
   type InterviewStage,
 } from '../../features/candidates/candidateTypes'
@@ -31,6 +31,8 @@ type CandidateDetailPageProps = {
   onBack: () => void
   canEdit?: boolean
   canManageStage?: boolean
+  onInterviewAlert?: (title: string, message: string) => void
+  onCandidateDataChanged?: () => void
 }
 
 function toFormValues(candidate: CandidateRecord): CandidateFormValues {
@@ -51,12 +53,19 @@ function toFormValues(candidate: CandidateRecord): CandidateFormValues {
   }
 }
 
-function CandidateDetailPage({ candidateId, jobs, onBack, canEdit = true, canManageStage = true }: CandidateDetailPageProps) {
+function CandidateDetailPage({
+  candidateId,
+  jobs,
+  onBack,
+  canEdit = true,
+  canManageStage = true,
+  onInterviewAlert,
+  onCandidateDataChanged,
+}: CandidateDetailPageProps) {
   const { showToast } = useToast()
   const [candidate, setCandidate] = useState<CandidateRecord | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [note, setNote] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [editValues, setEditValues] = useState<CandidateFormValues | null>(null)
   const [timeline, setTimeline] = useState<CandidateTimelineEvent[]>([])
@@ -87,19 +96,44 @@ function CandidateDetailPage({ candidateId, jobs, onBack, canEdit = true, canMan
 
   const activityItems = useMemo(() => {
     if (!candidate) return []
-    const noteEvents = candidate.notes.map((item, index) => ({
-      id: `note-${item.createdAt ?? index}`,
-      type: 'note' as const,
-      timestamp: item.createdAt ? new Date(item.createdAt).getTime() : 0,
-      label: item.text || 'Note added',
-    }))
     const statusEvents = candidate.statusHistory.map((item, index) => ({
       id: `status-${item.updatedAt ?? index}`,
       type: 'status' as const,
       timestamp: item.updatedAt ? new Date(item.updatedAt).getTime() : 0,
       label: `Stage moved to ${CANDIDATE_STATUS_LABELS[item.status]}`,
     }))
-    return [...noteEvents, ...statusEvents].sort((a, b) => b.timestamp - a.timestamp).slice(0, 12)
+    return [...statusEvents].sort((a, b) => b.timestamp - a.timestamp).slice(0, 12)
+  }, [candidate])
+
+  const journeyItems = useMemo(() => {
+    if (!candidate) return []
+    const orderedStages: CandidateStatus[] = [
+      'Applied',
+      'Screened',
+      'Shortlisted',
+      'Technical Interview 1',
+      'Technical Interview 2',
+      'HR Interview',
+      'Offered',
+      'Offer Accepted',
+    ]
+    const currentRank = orderedStages.indexOf(candidate.status)
+    const historyDate = new Map<CandidateStatus, string | undefined>()
+    candidate.statusHistory.forEach((item) => {
+      if (!historyDate.has(item.status)) historyDate.set(item.status, item.updatedAt)
+    })
+    historyDate.set('Applied', historyDate.get('Applied') ?? candidate.createdAt)
+
+    return orderedStages.map((stage, index) => {
+      const interviewForStage = candidate.interviews.find((item) => item.stage === stage)
+      const state = index < currentRank ? 'done' : index === currentRank ? 'current' : 'upcoming'
+      return {
+        stage,
+        state,
+        date: historyDate.get(stage),
+        interviewForStage,
+      }
+    })
   }, [candidate])
 
   async function loadCandidate() {
@@ -151,13 +185,37 @@ function CandidateDetailPage({ candidateId, jobs, onBack, canEdit = true, canMan
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head candidate-profile-head">
         <div>
           <p className="breadcrumb">Candidates / {candidate.name}</p>
-          <h1>{candidate.name}</h1>
-          <p className="subtitle">{jobLabel}</p>
+          <h1>Candidate Profile: {candidate.name}</h1>
+          <p className="subtitle">
+            <span className="status-chip">{CANDIDATE_STATUS_LABELS[candidate.status]}</span> • {jobLabel} • {candidate.location || 'Location not set'}
+          </p>
         </div>
         <div className="page-head__actions">
+          <button type="button" className="ghost-btn">
+            <span className="material-symbols-rounded">mail</span>
+            <span>Email</span>
+          </button>
+          <button type="button" className="ghost-btn">
+            <span className="material-symbols-rounded">chat</span>
+            <span>Message</span>
+          </button>
+          <button
+            type="button"
+            className="ghost-btn"
+            onClick={() => {
+              if (!candidate.resume?.filePath) {
+                showToast('Resume not uploaded yet.', 'error')
+                return
+              }
+              window.open(candidate.resume.filePath, '_blank', 'noopener,noreferrer')
+            }}
+          >
+            <span className="material-symbols-rounded">description</span>
+            <span>Resume</span>
+          </button>
           {canEdit && (
             <button
               type="button"
@@ -295,6 +353,7 @@ function CandidateDetailPage({ candidateId, jobs, onBack, canEdit = true, canMan
                   const updated = await updateCandidateStatus(candidate.id, event.target.value as CandidateRecord['status'])
                   setCandidate(updated)
                   setEditValues(toFormValues(updated))
+                  onCandidateDataChanged?.()
                   showToast('Candidate stage updated.', 'success')
                 } catch (statusError) {
                   const message = getErrorMessage(statusError, 'Unable to update candidate status')
@@ -432,6 +491,7 @@ function CandidateDetailPage({ candidateId, jobs, onBack, canEdit = true, canMan
                   location: interviewForm.location.trim() || undefined,
                 })
                 setCandidate(updated)
+                onInterviewAlert?.('Interview Scheduled', `${candidate.name} scheduled for ${interviewForm.stage}.`)
                 showToast('Interview scheduled.', 'success')
               } catch (addInterviewError) {
                 const message = getErrorMessage(addInterviewError, 'Unable to schedule interview')
@@ -462,8 +522,10 @@ function CandidateDetailPage({ candidateId, jobs, onBack, canEdit = true, canMan
                         const nextResult = interview.result === 'Passed' ? 'Failed' : 'Passed'
                         const updated = await updateInterviewForCandidate(candidate.id, interview._id as string, {
                           result: nextResult,
+                          completedAt: new Date().toISOString(),
                         })
                         setCandidate(updated)
+                        onInterviewAlert?.('Interview Result Updated', `${candidate.name} interview marked as ${nextResult}.`)
                         showToast(`Interview marked ${nextResult}.`, 'success')
                       } catch (updateError) {
                         const message = getErrorMessage(updateError, 'Unable to update interview result')
@@ -484,60 +546,23 @@ function CandidateDetailPage({ candidateId, jobs, onBack, canEdit = true, canMan
 
       <section className="editor-grid">
         <article className="editor-card">
-          <h3>Status Timeline</h3>
-          <ul className="overview-list">
-            {candidate.statusHistory.length === 0 && <li className="overview-list__empty">No status history available.</li>}
-            {[...candidate.statusHistory]
-              .sort((a, b) => new Date(b.updatedAt ?? '').getTime() - new Date(a.updatedAt ?? '').getTime())
-              .map((item, index) => (
-              <li key={`${item.status}-${item.updatedAt ?? index}`}>
-                <span className="material-symbols-rounded">schedule</span>
-                <span>
-                  <strong>{CANDIDATE_STATUS_LABELS[item.status]}</strong> updated {item.updatedAt ? new Date(item.updatedAt).toLocaleString() : 'recently'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </article>
-
-        <article className="editor-card">
-          <h3>Notes</h3>
-          <div className="field">
-            <label>Add Comment</label>
-            <textarea rows={3} value={note} onChange={(event) => setNote(event.target.value)} />
-            <button
-              type="button"
-              className="ghost-btn"
-              disabled={!canEdit}
-              onClick={async () => {
-                if (!note.trim()) return
-                try {
-                  const updated = await addNoteToCandidate(candidate.id, note.trim())
-                  setCandidate(updated)
-                  setEditValues(toFormValues(updated))
-                  setNote('')
-                  showToast('Note added.', 'success')
-                } catch (noteError) {
-                  const message = getErrorMessage(noteError, 'Unable to add note')
-                  setError(message)
-                  showToast(message, 'error')
-                }
-              }}
-            >
-              Add Note
-            </button>
-          </div>
-          <ul className="overview-list">
-            {candidate.notes.length === 0 && <li className="overview-list__empty">No notes yet.</li>}
-            {[...candidate.notes]
-              .sort((a, b) => new Date(b.createdAt ?? '').getTime() - new Date(a.createdAt ?? '').getTime())
-              .map((item, index) => (
-              <li key={`${item.createdAt ?? ''}-${index}`}>
-                <span className="material-symbols-rounded">comment</span>
-                <span>
-                  <strong>{item.text}</strong>
-                  <small>{item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recently added'}</small>
-                </span>
+          <h3>Application Journey & Timeline</h3>
+          <ul className="candidate-timeline">
+            {journeyItems.map((item) => (
+              <li key={item.stage} className={`candidate-timeline__item is-${item.state}`}>
+                <span className="candidate-timeline__dot">{item.state === 'done' ? '✓' : ''}</span>
+                <div className="candidate-timeline__content">
+                  <div className="candidate-timeline__row">
+                    <strong>{CANDIDATE_STATUS_LABELS[item.stage]}</strong>
+                    <small>{item.date ? new Date(item.date).toLocaleDateString() : item.state === 'upcoming' ? 'Pending' : 'In progress'}</small>
+                  </div>
+                  {item.interviewForStage?.scheduledAt && (
+                    <small>
+                      Scheduled: {new Date(item.interviewForStage.scheduledAt).toLocaleString()}
+                      {item.interviewForStage.interviewer?.name ? ` • Interview with ${item.interviewForStage.interviewer.name}` : ''}
+                    </small>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
@@ -549,7 +574,7 @@ function CandidateDetailPage({ candidateId, jobs, onBack, canEdit = true, canMan
             {activityItems.length === 0 && <li className="overview-list__empty">No activity captured yet.</li>}
             {activityItems.map((item) => (
               <li key={item.id}>
-                <span className="material-symbols-rounded">{item.type === 'note' ? 'edit_note' : 'sync_alt'}</span>
+                <span className="material-symbols-rounded">sync_alt</span>
                 <span>
                   <strong>{item.label}</strong>
                   <small>{item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Recently updated'}</small>

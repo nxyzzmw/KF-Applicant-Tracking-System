@@ -8,6 +8,7 @@ export type JobsQueryParams = {
   search?: string
   department?: string
   status?: JobStatus
+  jobTitle?: string
 }
 
 const JOBS_LIST_CACHE_TTL_MS = 15_000
@@ -86,11 +87,56 @@ function extractJobs(payload: JobsListResponse): JobApiRecord[] {
   return payload.data ?? payload.jobs ?? []
 }
 
+function includesText(value: string | undefined, query: string): boolean {
+  if (!query) return true
+  return (value ?? '').toLowerCase().includes(query.toLowerCase())
+}
+
+function applyClientFilters(jobs: JobRecord[], query: JobsQueryParams): JobRecord[] {
+  const search = query.search?.trim().toLowerCase() ?? ''
+  const department = query.department?.trim().toLowerCase() ?? ''
+  const status = query.status?.trim().toLowerCase() ?? ''
+
+  return jobs.filter((job) => {
+    const matchesSearch =
+      search.length === 0 ||
+      includesText(job.title, search) ||
+      includesText(job.reqId, search) ||
+      includesText(job.department, search) ||
+      includesText(job.hiringManager, search)
+
+    const matchesDepartment = department.length === 0 || (job.department ?? '').toLowerCase() === department
+    const matchesStatus = status.length === 0 || (job.status ?? '').toLowerCase() === status
+    return matchesSearch && matchesDepartment && matchesStatus
+  })
+}
+
 export async function getJobs(query: JobsQueryParams = {}): Promise<JobRecord[]> {
   const params = new URLSearchParams()
-  if (query.search && query.search.trim().length > 0) params.set('search', query.search.trim())
-  if (query.department && query.department.trim().length > 0) params.set('department', query.department.trim())
-  if (query.status && query.status.trim().length > 0) params.set('status', query.status)
+  if (query.search && query.search.trim().length > 0) {
+    const value = query.search.trim()
+    // Send common aliases used across backend implementations.
+    params.set('search', value)
+    params.set('query', value)
+    params.set('keyword', value)
+    params.set('jobTitle', value)
+  }
+  if(query.jobTitle && query.jobTitle.trim().length > 0) {
+    const value = query.jobTitle.trim()
+    params.set('title', value)
+    params.set('jobTitle', value)
+  }
+  if(query.status && query.status.trim().length > 0) {
+    const value = query.status.trim()
+    params.set('title', value)
+    params.set('jobStatus', value)
+  }
+  if (query.department && query.department.trim().length > 0) {
+    params.set('department', query.department.trim())
+  }
+  if (query.status && query.status.trim().length > 0) {
+    params.set('jobStatus', query.status)
+  }
   const queryString = params.toString()
   const path = queryString.length > 0 ? `/jobs?${queryString}` : '/jobs'
   const cacheKey = `jobs:list:${path}`
@@ -99,8 +145,9 @@ export async function getJobs(query: JobsQueryParams = {}): Promise<JobRecord[]>
 
   const response = await apiRequest<JobsListResponse>(path)
   const normalized = extractJobs(response).map(normalizeJob).filter((job) => job.id.length > 0)
-  writeCache(cacheKey, normalized, JOBS_LIST_CACHE_TTL_MS)
-  return normalized
+  const filtered = applyClientFilters(normalized, query)
+  writeCache(cacheKey, filtered, JOBS_LIST_CACHE_TTL_MS)
+  return filtered
 }
 
 export async function getJobById(jobId: string): Promise<JobRecord> {
@@ -108,15 +155,24 @@ export async function getJobById(jobId: string): Promise<JobRecord> {
   const cached = readCache<JobRecord>(cacheKey)
   if (cached) return cached
 
-  const response = await apiRequest<JobApiRecord | { data?: JobApiRecord }>(`/jobs/${jobId}`)
-  const payload =
-    typeof response === 'object' && response !== null && 'data' in response ? response.data : (response as JobApiRecord)
-  if (!payload) {
-    throw new Error('Job details not found')
+  const endpoints = [`/jobs/${jobId}`, `/job/${jobId}`]
+  let lastError: unknown = null
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await apiRequest<JobApiRecord | { data?: JobApiRecord }>(endpoint)
+      const payload =
+        typeof response === 'object' && response !== null && 'data' in response ? response.data : (response as JobApiRecord)
+      if (!payload) continue
+      const normalized = normalizeJob(payload)
+      writeCache(cacheKey, normalized, JOBS_DETAIL_CACHE_TTL_MS)
+      return normalized
+    } catch (error) {
+      lastError = error
+    }
   }
-  const normalized = normalizeJob(payload)
-  writeCache(cacheKey, normalized, JOBS_DETAIL_CACHE_TTL_MS)
-  return normalized
+
+  throw (lastError instanceof Error ? lastError : new Error('Job details not found'))
 }
 
 export async function createJob(data: Partial<JobApiRecord>): Promise<JobRecord> {

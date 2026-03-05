@@ -13,9 +13,19 @@ type JobDetailsPageProps = {
   onEdit: () => void
   onManageCandidates: (jobId: string) => void
   canEditJob?: boolean
+  canManageCandidates?: boolean
 }
 
-function JobDetailsPage({ job, loading, error, onBack, onEdit, onManageCandidates, canEditJob = true }: JobDetailsPageProps) {
+function JobDetailsPage({
+  job,
+  loading,
+  error,
+  onBack,
+  onEdit,
+  onManageCandidates,
+  canEditJob = true,
+  canManageCandidates = true,
+}: JobDetailsPageProps) {
   const [candidates, setCandidates] = useState<CandidateRecord[]>([])
   const [candidatesLoading, setCandidatesLoading] = useState(false)
   const [candidatesError, setCandidatesError] = useState<string | null>(null)
@@ -41,13 +51,14 @@ function JobDetailsPage({ job, loading, error, onBack, onEdit, onManageCandidate
     setCandidates([])
   }, [job?.id])
 
+  const candidatePreview = useMemo(() => candidates.slice(0, 5), [candidates])
+
   if (loading) return <p className="panel-message">Loading job details...</p>
   if (error) return <p className="panel-message panel-message--error">{error}</p>
   if (!job) return <p className="panel-message panel-message--error">Job not found.</p>
 
   const fillRatio = job.openings === 0 ? 0 : Math.round((job.filled / job.openings) * 100)
   const candidatesAppliedCount = candidates.length
-  const candidatePreview = useMemo(() => candidates.slice(0, 5), [candidates])
 
   return (
     <>
@@ -63,7 +74,7 @@ function JobDetailsPage({ job, loading, error, onBack, onEdit, onManageCandidate
           <button type="button" className="ghost-btn" onClick={onBack}>
             Back to List
           </button>
-          <button type="button" className="ghost-btn" onClick={() => onManageCandidates(job.id)}>
+          <button type="button" className="ghost-btn" disabled={!canManageCandidates} onClick={() => onManageCandidates(job.id)}>
             View Candidates
           </button>
           {canEditJob && (

@@ -36,7 +36,7 @@ function normalizeCandidateStatus(value?: string): CandidateStatus {
   const normalized = (value ?? '').trim().toLowerCase()
   if (normalized === 'technical intv 1') return 'Technical Interview 1'
   if (normalized === 'technical intv 2') return 'Technical Interview 2'
-  if (normalized === 'hr round') return 'HR Round'
+  if (normalized === 'hr round') return 'HR Interview'
   if (normalized === 'offer accepted' || normalized === 'offer accepted') return 'Offer Accepted'
   if (normalized === 'offer declined' || normalized === 'offer declined') return 'Offer Declined'
   if (normalized === 'offer revoked' || normalized === 'offer revoked') return 'Offer Revoked'
