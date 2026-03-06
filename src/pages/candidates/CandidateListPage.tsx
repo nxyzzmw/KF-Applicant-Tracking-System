@@ -19,6 +19,10 @@ import Pagination from '../../components/common/Pagination'
 type CandidateListPageProps = {
   jobs: JobRecord[]
   initialJobId?: string | null
+  searchTerm: string
+  onSearchTermChange: (value: string) => void
+  sortDirection: 'asc' | 'desc'
+  onToggleSortDirection: () => void
   canCreateCandidate?: boolean
   canEditCandidate?: boolean
   canManageCandidateStage?: boolean
@@ -32,6 +36,10 @@ type CandidateListPageProps = {
 function CandidateListPage({
   jobs,
   initialJobId,
+  searchTerm,
+  onSearchTermChange,
+  sortDirection,
+  onToggleSortDirection,
   canCreateCandidate = true,
   canEditCandidate = true,
   canManageCandidateStage = true,
@@ -45,7 +53,6 @@ function CandidateListPage({
   const [candidates, setCandidates] = useState<CandidateRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [searchTerm, setSearchTerm] = useState('')
   const [jobFilter, setJobFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState<'all' | CandidateStatus>('all')
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list')
@@ -53,7 +60,6 @@ function CandidateListPage({
   const [dropStatus, setDropStatus] = useState<CandidateStatus | null>(null)
   const [boardPageByStatus, setBoardPageByStatus] = useState<Record<string, number>>({})
   const [listPage, setListPage] = useState(1)
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set())
   const [bulkStatus, setBulkStatus] = useState<CandidateStatus>('Screened')
   const [scheduleTarget, setScheduleTarget] = useState<{ candidateId: string; candidateName: string; stage: InterviewStage } | null>(null)
@@ -290,28 +296,10 @@ function CandidateListPage({
         </div>
         <div className="page-head__actions">
           {viewMode === 'list' && (
-            <div className="candidate-toolbar-inline">
-              <button
-                type="button"
-                className="ghost-btn"
-                aria-label="Sort ascending"
-                title="Sort ascending"
-                onClick={() => setSortDirection('asc')}
-                disabled={sortDirection === 'asc'}
-              >
-                <span className="material-symbols-rounded">north</span>
-              </button>
-              <button
-                type="button"
-                className="ghost-btn"
-                aria-label="Sort descending"
-                title="Sort descending"
-                onClick={() => setSortDirection('desc')}
-                disabled={sortDirection === 'desc'}
-              >
-                <span className="material-symbols-rounded">south</span>
-              </button>
-            </div>
+            <button type="button" className="ghost-btn" onClick={onToggleSortDirection}>
+              <span className="material-symbols-rounded">sort_by_alpha</span>
+              <span>{sortDirection === 'asc' ? 'A-Z' : 'Z-A'}</span>
+            </button>
           )}
           {viewMode === 'list' && canManageCandidateStage && selectedCount > 0 && (
             <div className="candidate-toolbar-inline">
@@ -350,7 +338,7 @@ function CandidateListPage({
           type="search"
           placeholder="Search candidate name or email..."
           value={searchTerm}
-          onChange={(event) => setSearchTerm(event.target.value)}
+          onChange={(event) => onSearchTermChange(event.target.value)}
         />
         <select value={jobFilter} onChange={(event) => setJobFilter(event.target.value)} aria-label="Filter by role">
           <option value="all">Role</option>
@@ -372,7 +360,7 @@ function CandidateListPage({
           type="button"
           className="ghost-btn clear-btn"
           onClick={() => {
-            setSearchTerm('')
+            onSearchTermChange('')
             setJobFilter('all')
             setStatusFilter('all')
           }}

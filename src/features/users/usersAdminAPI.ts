@@ -97,6 +97,17 @@ const backendToFrontendPermissionMap = Object.entries(permissionKeyMap).reduce<R
   return acc
 }, {})
 
+backendToFrontendPermissionMap.canViewDashboard = 'canViewDashboard'
+backendToFrontendPermissionMap.canViewJobs = 'canViewJobs'
+backendToFrontendPermissionMap.canCreateJob = 'canCreateJob'
+backendToFrontendPermissionMap.canEditJob = 'canEditJob'
+backendToFrontendPermissionMap.canDeleteJob = 'canDeleteJob'
+backendToFrontendPermissionMap.canViewCandidates = 'canViewCandidates'
+backendToFrontendPermissionMap.canCreateCandidate = 'canCreateCandidate'
+backendToFrontendPermissionMap.canEditCandidate = 'canEditCandidate'
+backendToFrontendPermissionMap.canManageCandidateStage = 'canManageCandidateStage'
+backendToFrontendPermissionMap.canManageUsers = 'canManageUsers'
+
 function toBackendRole(role: AppRole): string {
   if (role === 'Super Admin') return 'superadmin'
   if (role === 'HR Recruiter') return 'hrrecruiter'
@@ -214,6 +225,7 @@ export async function getUsers(): Promise<ManagedUser[]> {
 }
 
 export async function createUser(input: CreateUserInput): Promise<ManagedUser> {
+  const permissionOverrides = toBackendPermissionOverrides(input.permissions)
   const registerPayload = {
     firstName: input.firstName.trim(),
     lastName: input.lastName.trim(),
@@ -224,7 +236,7 @@ export async function createUser(input: CreateUserInput): Promise<ManagedUser> {
   const createPayload = {
     ...registerPayload,
     ...(typeof input.isActive === 'boolean' ? { isActive: input.isActive } : {}),
-    ...(toBackendPermissionOverrides(input.permissions) ? { permissions: toBackendPermissionOverrides(input.permissions) } : {}),
+    ...(permissionOverrides ? { permissions: permissionOverrides, assignedPermissions: permissionOverrides } : {}),
   }
 
   const configured = USER_REGISTER_ENDPOINTS.split(',').map((value: string) => value.trim()).filter((value: string) => value.length > 0)
@@ -290,9 +302,13 @@ export async function updateUserById(userId: string, input: UpdateUserInput): Pr
   ])
   let lastError: unknown = null
   const updatePayload: Record<string, unknown> = {}
+  const permissionOverrides = input.permissions ? toBackendPermissionOverrides(input.permissions) : undefined
   if (input.role) updatePayload.role = toBackendRole(input.role)
   if (typeof input.isActive === 'boolean') updatePayload.isActive = input.isActive
-  if (input.permissions) updatePayload.permissions = toBackendPermissionOverrides(input.permissions)
+  if (permissionOverrides) {
+    updatePayload.permissions = permissionOverrides
+    updatePayload.assignedPermissions = permissionOverrides
+  }
 
   for (const endpoint of endpoints) {
     try {

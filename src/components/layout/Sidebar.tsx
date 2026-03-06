@@ -1,38 +1,28 @@
+export type SidebarNavItem = {
+  id: string
+  label: string
+  icon: string
+  isVisible?: boolean
+  onClick?: () => void
+}
+
 type SidebarProps = {
-  onJobsClick?: () => void
-  onDashboardClick?: () => void
-  onCandidatesClick?: () => void
-  onInterviewsClick?: () => void
-  onUsersClick?: () => void
-  activeNav: 'dashboard' | 'jobs' | 'candidates' | 'interviews' | 'users'
+  navItems: SidebarNavItem[]
+  activeNav: string
   logoSrc?: string
   collapsed: boolean
   onToggleCollapse: () => void
   role?: string
-  canViewDashboard?: boolean
-  canViewJobs?: boolean
-  canViewCandidates?: boolean
-  canViewInterviews?: boolean
-  canManageUsers?: boolean
   onLogout?: () => void
 }
 
 function Sidebar({
-  onJobsClick,
-  onDashboardClick,
-  onCandidatesClick,
-  onInterviewsClick,
-  onUsersClick,
+  navItems,
   activeNav,
   logoSrc,
   collapsed,
   onToggleCollapse,
   role,
-  canViewDashboard = true,
-  canViewJobs = true,
-  canViewCandidates = true,
-  canViewInterviews = true,
-  canManageUsers,
   onLogout,
 }: SidebarProps) {
   const roleLabel = role?.trim() || 'HR Recruiter'
@@ -51,48 +41,20 @@ function Sidebar({
       </div>
 
       <nav className="jm-nav" aria-label="Main">
-        {canViewDashboard && (
-          <button type="button" className={`jm-nav__item ${activeNav === 'dashboard' ? 'is-active' : ''}`} onClick={onDashboardClick}>
-            <span className="material-symbols-rounded nav-icon">dashboard</span>
-            <span className="nav-label">Dashboard</span>
-          </button>
-        )}
-        {canViewJobs && (
-          <button type="button" className={`jm-nav__item ${activeNav === 'jobs' ? 'is-active' : ''}`} onClick={onJobsClick}>
-            <span className="material-symbols-rounded nav-icon">work</span>
-            <span className="nav-label">Jobs</span>
-          </button>
-        )}
-        {canViewCandidates && (
-          <button type="button" className={`jm-nav__item ${activeNav === 'candidates' ? 'is-active' : ''}`} onClick={onCandidatesClick}>
-            <span className="material-symbols-rounded nav-icon">group</span>
-            <span className="nav-label">Candidates</span>
-          </button>
-        )}
-        {canViewInterviews && (
-          <button type="button" className={`jm-nav__item ${activeNav === 'interviews' ? 'is-active' : ''}`} onClick={onInterviewsClick}>
-            <span className="material-symbols-rounded nav-icon">event</span>
-            <span className="nav-label">Interviews</span>
-          </button>
-        )}
-        {canManageUsers && (
-          <button type="button" className={`jm-nav__item ${activeNav === 'users' ? 'is-active' : ''}`} onClick={onUsersClick}>
-            <span className="material-symbols-rounded nav-icon">admin_panel_settings</span>
-            <span className="nav-label">Users</span>
-          </button>
-        )}
-        <button type="button" className="jm-nav__item">
-          <span className="material-symbols-rounded nav-icon">description</span>
-          <span className="nav-label">Reports</span>
-        </button>
-        <button type="button" className="jm-nav__item">
-          <span className="material-symbols-rounded nav-icon">schema</span>
-          <span className="nav-label">Workflow</span>
-        </button>
-        <button type="button" className="jm-nav__item">
-          <span className="material-symbols-rounded nav-icon">settings</span>
-          <span className="nav-label">Settings</span>
-        </button>
+        {navItems
+          .filter((item) => item.isVisible !== false)
+          .map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`jm-nav__item ${activeNav === item.id ? 'is-active' : ''}`}
+              onClick={item.onClick}
+              disabled={!item.onClick}
+            >
+              <span className="material-symbols-rounded nav-icon">{item.icon}</span>
+              <span className="nav-label">{item.label}</span>
+            </button>
+          ))}
       </nav>
 
       <div className="jm-sidebar__footer">

@@ -12,6 +12,8 @@ type JobListPageProps = {
   departmentFilter: string
   statusFilter: 'all' | JobStatus
   onSearchTermChange: (value: string) => void
+  sortDirection: 'asc' | 'desc'
+  onToggleSortDirection: () => void
   onDepartmentFilterChange: (value: string) => void
   onStatusFilterChange: (value: 'all' | JobStatus) => void
   onClearFilters: () => void
@@ -111,6 +113,8 @@ function JobListPage({
   departmentFilter,
   statusFilter,
   onSearchTermChange,
+  sortDirection,
+  onToggleSortDirection,
   onDepartmentFilterChange,
   onStatusFilterChange,
   onClearFilters,
@@ -130,7 +134,6 @@ function JobListPage({
   const [dragJobId, setDragJobId] = useState<string | null>(null)
   const [dropStatus, setDropStatus] = useState<JobStatus | null>(null)
   const [listPage, setListPage] = useState(1)
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set())
   const [bulkStatus, setBulkStatus] = useState<JobStatus>('Open')
   const LIST_PAGE_SIZE = 8
@@ -238,9 +241,13 @@ function JobListPage({
   const editableStatusOptions = useMemo(() => STATUS_OPTIONS.filter((status) => status.value !== 'Filled'), [])
 
   const sortedJobs = useMemo(() => {
-    const sorted = [...jobs].sort((first, second) => (first.title || '').localeCompare(second.title || ''))
+    const query = searchTerm.trim().toLowerCase()
+    const visibleJobs = query
+      ? jobs.filter((job) => (job.title || '').toLowerCase().includes(query))
+      : jobs
+    const sorted = [...visibleJobs].sort((first, second) => (first.title || '').localeCompare(second.title || ''))
     return sortDirection === 'asc' ? sorted : sorted.reverse()
-  }, [jobs, sortDirection])
+  }, [jobs, searchTerm, sortDirection])
 
   const pageCount = Math.max(1, Math.ceil(sortedJobs.length / LIST_PAGE_SIZE))
   const safePage = Math.min(listPage, pageCount)
@@ -290,28 +297,10 @@ function JobListPage({
         </div>
         <div className="page-head__actions">
           {viewMode === 'list' && (
-            <div className="candidate-toolbar-inline">
-              <button
-                type="button"
-                className="ghost-btn"
-                aria-label="Sort ascending"
-                title="Sort ascending"
-                onClick={() => setSortDirection('asc')}
-                disabled={sortDirection === 'asc'}
-              >
-                <span className="material-symbols-rounded">north</span>
-              </button>
-              <button
-                type="button"
-                className="ghost-btn"
-                aria-label="Sort descending"
-                title="Sort descending"
-                onClick={() => setSortDirection('desc')}
-                disabled={sortDirection === 'desc'}
-              >
-                <span className="material-symbols-rounded">south</span>
-              </button>
-            </div>
+            <button type="button" className="ghost-btn" onClick={onToggleSortDirection}>
+              <span className="material-symbols-rounded">sort_by_alpha</span>
+              <span>{sortDirection === 'asc' ? 'A-Z' : 'Z-A'}</span>
+            </button>
           )}
           {viewMode === 'list' && canEditJob && selectedCount > 0 && (
             <div className="candidate-toolbar-inline">
@@ -356,7 +345,7 @@ function JobListPage({
       <section className="filters-panel">
         <input
           type="search"
-          placeholder="Search by title or ID..."
+          placeholder="Search by job title..."
           value={searchTerm}
           onChange={(event) => onSearchTermChange(event.target.value)}
         />

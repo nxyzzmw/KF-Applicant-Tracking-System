@@ -8,6 +8,8 @@ import Pagination from '../../components/common/Pagination'
 
 type UserManagementPageProps = {
   role: string
+  searchTerm: string
+  onSearchTermChange: (value: string) => void
   onRbacPolicyUpdated?: () => void
 }
 
@@ -19,7 +21,6 @@ type CreateUserForm = {
   email: string
   password: string
   role: AppRole
-  isActive: boolean
   permissions: RolePermissions
 }
 
@@ -29,6 +30,9 @@ type EditUserForm = {
   isActive: boolean
   permissions: RolePermissions
 }
+
+type CreateUserField = 'firstName' | 'lastName' | 'email' | 'password'
+type CreateUserErrors = Partial<Record<CreateUserField, string>>
 
 const permissionLabels: Array<{ key: keyof RolePermissions; label: string }> = [
   { key: 'canViewDashboard', label: 'View Dashboard' },
@@ -55,7 +59,7 @@ function getNextRole(current: AppRole): AppRole | null {
   return ROLE_OPTIONS[index + 1]
 }
 
-function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPageProps) {
+function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicyUpdated }: UserManagementPageProps) {
   const { showToast } = useToast()
   const [pageMode, setPageMode] = useState<UserPageMode>('list')
   const [users, setUsers] = useState<ManagedUser[]>([])
@@ -67,7 +71,10 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
   const [dropRole, setDropRole] = useState<AppRole | null>(null)
   const [creating, setCreating] = useState(false)
   const [savingRolePolicy, setSavingRolePolicy] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [formErrors, setFormErrors] = useState<CreateUserErrors>({})
   const [usersPage, setUsersPage] = useState(1)
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [rolePolicy, setRolePolicy] = useState<RbacPolicy | null>(null)
   const [editForm, setEditForm] = useState<EditUserForm | null>(null)
   const [form, setForm] = useState<CreateUserForm>({
@@ -76,7 +83,6 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
     email: '',
     password: '',
     role: 'HR Recruiter',
-    isActive: true,
     permissions: getRolePermissions('HR Recruiter'),
   })
 
@@ -130,7 +136,13 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
 
   useEffect(() => {
     setUsersPage(1)
-  }, [users.length, usersViewMode])
+  }, [users.length, usersViewMode, searchTerm, sortDirection])
+
+  useEffect(() => {
+    if (pageMode === 'create') return
+    setFormErrors({})
+    setShowPassword(false)
+  }, [pageMode])
 
   function renderPermissionMatrix(
     value: RolePermissions,
@@ -166,31 +178,56 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
     )
   }
 
+  function validateCreateForm(values: CreateUserForm): CreateUserErrors {
+    const errors: CreateUserErrors = {}
+    const nameRegex = /^[A-Za-z][A-Za-z\s'-]{1,49}$/
+    const emailValue = values.email.trim()
+
+    if (!values.firstName.trim()) errors.firstName = 'First name is required.'
+    else if (!nameRegex.test(values.firstName.trim())) errors.firstName = 'Enter a valid first name.'
+
+    if (!values.lastName.trim()) errors.lastName = 'Last name is required.'
+    else if (!nameRegex.test(values.lastName.trim())) errors.lastName = 'Enter a valid last name.'
+
+    if (!emailValue) errors.email = 'Email is required.'
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue)) errors.email = 'Enter a valid email address.'
+
+    if (!values.password) errors.password = 'Password is required.'
+    else if (values.password.length < 8) errors.password = 'Password must be at least 8 characters.'
+    else if (!/[A-Z]/.test(values.password) || !/[a-z]/.test(values.password) || !/[0-9]/.test(values.password)) {
+      errors.password = 'Use at least one uppercase letter, one lowercase letter, and one number.'
+    }
+
+    return errors
+  }
+
+  function hasCreateFormErrors(errors: CreateUserErrors): boolean {
+    return Boolean(errors.firstName || errors.lastName || errors.email || errors.password)
+  }
+
+  function updateCreateField(field: CreateUserField, value: string) {
+    setForm((prev) => ({ ...prev, [field]: value }))
+    setFormErrors((prev) => ({ ...prev, [field]: undefined }))
+  }
+
   async function handleCreateUser(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!isSuperAdmin) return
-    if (!form.firstName.trim() || !form.lastName.trim() || !form.email.trim() || !form.password.trim()) {
-      showToast('First name, last name, email, and password are required.', 'error')
-      return
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-      showToast('Enter a valid email address.', 'error')
-      return
-    }
-    if (form.password.trim().length < 8) {
-      showToast('Password must be at least 8 characters.', 'error')
+    const validationErrors = validateCreateForm(form)
+    setFormErrors(validationErrors)
+    if (hasCreateFormErrors(validationErrors)) {
       return
     }
 
     setCreating(true)
     try {
       const created = await createUser({
-        firstName: form.firstName,
-        lastName: form.lastName,
-        email: form.email,
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        email: form.email.trim(),
         password: form.password,
         role: form.role,
-        isActive: form.isActive,
+        isActive: true,
         permissions: form.permissions,
       })
       setUsers((prev) => [created, ...prev.filter((user) => user.id !== created.id)])
@@ -200,9 +237,10 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
         email: '',
         password: '',
         role: 'HR Recruiter',
-        isActive: true,
         permissions: getRoleDefaultPermissions('HR Recruiter'),
       })
+      setFormErrors({})
+      setShowPassword(false)
       setPageMode('list')
       showToast('User created successfully.', 'success')
     } catch (error) {
@@ -307,30 +345,41 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
     }
   }
 
+  const filteredUsers = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase()
+    if (!query) return users
+    return users.filter((user) =>
+      `${user.firstName} ${user.lastName} ${user.email} ${user.role}`.toLowerCase().includes(query),
+    )
+  }, [users, searchTerm])
+
+  const sortedUsers = useMemo(() => {
+    const sorted = [...filteredUsers].sort((first, second) =>
+      `${first.firstName} ${first.lastName}`.trim().localeCompare(`${second.firstName} ${second.lastName}`.trim()),
+    )
+    return sortDirection === 'asc' ? sorted : sorted.reverse()
+  }, [filteredUsers, sortDirection])
+
   const usersByRole = useMemo(
     () =>
       ROLE_OPTIONS.reduce<Record<AppRole, ManagedUser[]>>((acc, roleOption) => {
-        acc[roleOption] = users.filter((user) => user.role === roleOption)
+        acc[roleOption] = sortedUsers.filter((user) => user.role === roleOption)
         return acc
       }, {} as Record<AppRole, ManagedUser[]>),
-    [users],
+    [sortedUsers],
   )
 
-  const usersPageCount = Math.max(1, Math.ceil(users.length / 10))
+  const usersPageCount = Math.max(1, Math.ceil(sortedUsers.length / 10))
   const usersSafePage = Math.min(usersPage, usersPageCount)
   const pagedUsers = useMemo(() => {
     const start = (usersSafePage - 1) * 10
-    return users.slice(start, start + 10)
-  }, [users, usersSafePage])
+    return sortedUsers.slice(start, start + 10)
+  }, [sortedUsers, usersSafePage])
 
   return (
     <>
       <section className="page-head">
         <div>
-          <button type="button" className="ghost-btn" onClick={() => window.history.back()} style={{ marginBottom: '0.45rem' }}>
-            <span className="material-symbols-rounded">arrow_back</span>
-            <span>Back</span>
-          </button>
           <p className="breadcrumb">Administration / Users</p>
           <h1>User & Access Management</h1>
           <p className="subtitle">
@@ -340,6 +389,12 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
         <div className="page-head__actions">
           {pageMode === 'list' && (
             <>
+              {usersViewMode === 'list' && (
+                <button type="button" className="ghost-btn" onClick={() => setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))}>
+                  <span className="material-symbols-rounded">sort_by_alpha</span>
+                  <span>{sortDirection === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                </button>
+              )}
               <button type="button" className="ghost-btn" onClick={() => setUsersViewMode((prev) => (prev === 'list' ? 'board' : 'list'))}>
                 <span className="material-symbols-rounded">{usersViewMode === 'list' ? 'view_kanban' : 'table_rows'}</span>
                 <span>{usersViewMode === 'list' ? 'Board View' : 'List View'}</span>
@@ -370,11 +425,22 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
               <span className="material-symbols-rounded">groups</span>
               <span>All Users</span>
             </h3>
+            <div className="filters-panel" style={{ marginBottom: '0.8rem' }}>
+              <input
+                type="search"
+                placeholder="Search by name, email, role..."
+                value={searchTerm}
+                onChange={(event) => onSearchTermChange(event.target.value)}
+              />
+              <button type="button" className="ghost-btn clear-btn" onClick={() => onSearchTermChange('')}>
+                Clear
+              </button>
+            </div>
             {loadingUsers && <p className="overview-note">Loading users...</p>}
             {usersError && <p className="panel-message panel-message--error">{usersError}</p>}
-            {!loadingUsers && !usersError && users.length === 0 && <p className="overview-note">No users available.</p>}
+            {!loadingUsers && !usersError && sortedUsers.length === 0 && <p className="overview-note">No users available.</p>}
 
-            {!loadingUsers && users.length > 0 && usersViewMode === 'list' && (
+            {!loadingUsers && sortedUsers.length > 0 && usersViewMode === 'list' && (
               <div className="ui-table-wrap">
                 <table className="ui-table">
                   <thead>
@@ -434,7 +500,7 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
             </div>
           )}
 
-            {!loadingUsers && users.length > 0 && usersViewMode === 'board' && (
+            {!loadingUsers && sortedUsers.length > 0 && usersViewMode === 'board' && (
               <div className="candidate-board" style={{ gridAutoColumns: 'minmax(280px, 280px)' }}>
                 {ROLE_OPTIONS.map((roleOption) => {
                   const roleUsers = usersByRole[roleOption]
@@ -551,19 +617,50 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
             <form className="create-form-grid" onSubmit={(event) => void handleCreateUser(event)}>
               <div className="field">
                 <label>First Name</label>
-                <input value={form.firstName} disabled={!isSuperAdmin || creating} onChange={(event) => setForm((prev) => ({ ...prev, firstName: event.target.value }))} />
+                <input
+                  className={formErrors.firstName ? 'input-error' : ''}
+                  value={form.firstName}
+                  disabled={!isSuperAdmin || creating}
+                  onChange={(event) => updateCreateField('firstName', event.target.value)}
+                />
+                {formErrors.firstName && <small className="field-error">{formErrors.firstName}</small>}
               </div>
               <div className="field">
                 <label>Last Name</label>
-                <input value={form.lastName} disabled={!isSuperAdmin || creating} onChange={(event) => setForm((prev) => ({ ...prev, lastName: event.target.value }))} />
+                <input
+                  className={formErrors.lastName ? 'input-error' : ''}
+                  value={form.lastName}
+                  disabled={!isSuperAdmin || creating}
+                  onChange={(event) => updateCreateField('lastName', event.target.value)}
+                />
+                {formErrors.lastName && <small className="field-error">{formErrors.lastName}</small>}
               </div>
               <div className="field">
                 <label>Email</label>
-                <input type="email" value={form.email} disabled={!isSuperAdmin || creating} onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))} />
+                <input
+                  type="email"
+                  className={formErrors.email ? 'input-error' : ''}
+                  value={form.email}
+                  disabled={!isSuperAdmin || creating}
+                  onChange={(event) => updateCreateField('email', event.target.value)}
+                />
+                {formErrors.email && <small className="field-error">{formErrors.email}</small>}
               </div>
               <div className="field">
                 <label>Password</label>
-                <input type="password" value={form.password} disabled={!isSuperAdmin || creating} onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))} />
+                <div className="input-wrap">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    className={formErrors.password ? 'input-error' : ''}
+                    value={form.password}
+                    disabled={!isSuperAdmin || creating}
+                    onChange={(event) => updateCreateField('password', event.target.value)}
+                  />
+                  <button type="button" className="user-password-toggle" onClick={() => setShowPassword((prev) => !prev)} disabled={!isSuperAdmin || creating}>
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+                {formErrors.password && <small className="field-error">{formErrors.password}</small>}
               </div>
               <div className="field">
                 <label>Role</label>
@@ -584,10 +681,7 @@ function UserManagementPage({ role, onRbacPolicyUpdated }: UserManagementPagePro
               </div>
               <div className="field">
                 <label>Status</label>
-                <select value={form.isActive ? 'Active' : 'Inactive'} disabled={!isSuperAdmin || creating} onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.value === 'Active' }))}>
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
+                <input value="Active" disabled />
               </div>
               <div className="field field--full">
                 <label>Permission Matrix (Individual Override)</label>

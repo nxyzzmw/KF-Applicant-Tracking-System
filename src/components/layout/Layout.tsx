@@ -1,81 +1,64 @@
 import { useState, type ReactNode } from 'react'
 import Header from './Header'
-import Sidebar from './Sidebar'
-import type { HeaderAlertItem } from './Header'
+import Sidebar, { type SidebarNavItem } from './Sidebar'
+import type { HeaderAlertItem, HeaderAlertSummary } from './Header'
 
 type LayoutProps = {
   children: ReactNode
-  onShowJobs: () => void
-  onShowDashboard: () => void
-  onShowCandidates: () => void
-  onShowInterviews?: () => void
-  onShowUsers?: () => void
-  activeNav: 'dashboard' | 'jobs' | 'candidates' | 'interviews' | 'users'
+  navItems: SidebarNavItem[]
+  activeNav: string
   logoSrc?: string
   role?: string
-  canViewDashboard?: boolean
-  canViewJobs?: boolean
-  canViewCandidates?: boolean
-  canViewInterviews?: boolean
-  canManageUsers?: boolean
   onLogout?: () => void
   alerts: HeaderAlertItem[]
   alertsLoading: boolean
   alertsError: string | null
   alertPermission: NotificationPermission | 'unsupported'
-  onRetryAlerts: () => void
   onRequestAlertPermission: () => void
   onMarkAlertRead: (alertId: string) => void
+  onMarkAllRead: () => void
   onClearReadAlerts: () => void
   onClearAllAlerts: () => void
+  alertSummary?: HeaderAlertSummary | null
+  searchValue: string
+  onSearchValueChange: (value: string) => void
+  onSearchSubmit?: (value: string) => void
+  showSearchControls?: boolean
 }
 
 function Layout({
   children,
-  onShowJobs,
-  onShowDashboard,
-  onShowCandidates,
-  onShowInterviews,
-  onShowUsers,
+  navItems,
   activeNav,
   logoSrc,
   role,
-  canViewDashboard,
-  canViewJobs,
-  canViewCandidates,
-  canViewInterviews,
-  canManageUsers,
   onLogout,
   alerts,
   alertsLoading,
   alertsError,
   alertPermission,
-  onRetryAlerts,
   onRequestAlertPermission,
   onMarkAlertRead,
+  onMarkAllRead,
   onClearReadAlerts,
   onClearAllAlerts,
+  alertSummary,
+  searchValue,
+  onSearchValueChange,
+  onSearchSubmit,
+  showSearchControls = true,
 }: LayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   return (
     <div className={`job-module ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
       <Sidebar
-        onJobsClick={onShowJobs}
-        onDashboardClick={onShowDashboard}
-        onCandidatesClick={onShowCandidates}
-        onInterviewsClick={onShowInterviews}
-        onUsersClick={onShowUsers}
+        navItems={navItems}
         activeNav={activeNav}
         logoSrc={logoSrc}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed((prev) => !prev)}
         role={role}
-        canViewDashboard={canViewDashboard}
-        canViewJobs={canViewJobs}
-        canViewCandidates={canViewCandidates}
-        canViewInterviews={canViewInterviews}
-        canManageUsers={canManageUsers}
         onLogout={onLogout}
       />
       <div className="job-module__content">
@@ -86,11 +69,16 @@ function Layout({
           alertsLoading={alertsLoading}
           alertsError={alertsError}
           alertPermission={alertPermission}
-          onRetryAlerts={onRetryAlerts}
           onRequestAlertPermission={onRequestAlertPermission}
           onMarkAlertRead={onMarkAlertRead}
+          onMarkAllRead={onMarkAllRead}
           onClearReadAlerts={onClearReadAlerts}
           onClearAllAlerts={onClearAllAlerts}
+          alertSummary={alertSummary}
+          searchValue={searchValue}
+          onSearchValueChange={onSearchValueChange}
+          onSearchSubmit={onSearchSubmit}
+          showSearchControls={showSearchControls}
         />
         <main className="job-main">{children}</main>
       </div>

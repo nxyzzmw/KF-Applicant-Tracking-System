@@ -135,8 +135,5 @@ export function saveRbacPolicy(policy: RbacPolicy): void {
 export function getRolePermissions(role?: string): RolePermissions {
   const normalized = normalizeRole(role)
   const policy = getStoredRbacPolicy()
-  if (normalized === 'Super Admin') {
-    return { ...DEFAULT_POLICY['Super Admin'] }
-  }
   return policy[normalized]
 }

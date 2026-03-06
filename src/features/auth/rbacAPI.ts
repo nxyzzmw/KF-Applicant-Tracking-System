@@ -1,5 +1,5 @@
 import { apiRequest } from '../../services/axiosInstance'
-import { type AppRole, type RbacPolicy, type RolePermissions } from './roleAccess'
+import { saveRbacPolicy, type AppRole, type RbacPolicy, type RolePermissions } from './roleAccess'
 
 type BackendRoleKey = 'superadmin' | 'hrrecruiter' | 'hiringmanager' | 'interviewpanel' | 'management'
 type BackendPermissionKey =
@@ -111,7 +111,9 @@ export async function getRbacPolicy(): Promise<RbacPolicy> {
     try {
       const response = await apiRequest<RbacPolicyApiResponse | { data?: RbacPolicyApiResponse }>(endpoint)
       const payload = (response as { data?: RbacPolicyApiResponse }).data ?? (response as RbacPolicyApiResponse)
-      return toFrontendPolicy(payload.permissions as BackendPermissionMatrix)
+      const policy = toFrontendPolicy(payload.permissions as BackendPermissionMatrix)
+      saveRbacPolicy(policy)
+      return policy
     } catch (error) {
       lastError = error
     }
@@ -130,7 +132,9 @@ export async function updateRbacPolicy(policy: RbacPolicy): Promise<RbacPolicy> 
         },
       })
       const payload = (response as { data?: RbacPolicyApiResponse }).data ?? (response as RbacPolicyApiResponse)
-      return toFrontendPolicy(payload.permissions as BackendPermissionMatrix)
+      const updatedPolicy = toFrontendPolicy(payload.permissions as BackendPermissionMatrix)
+      saveRbacPolicy(updatedPolicy)
+      return updatedPolicy
     } catch (error) {
       lastError = error
     }
@@ -146,7 +150,9 @@ export async function resetRbacPolicy(): Promise<RbacPolicy> {
         method: 'POST',
       })
       const payload = (response as { data?: RbacPolicyApiResponse }).data ?? (response as RbacPolicyApiResponse)
-      return toFrontendPolicy(payload.permissions as BackendPermissionMatrix)
+      const resetPolicy = toFrontendPolicy(payload.permissions as BackendPermissionMatrix)
+      saveRbacPolicy(resetPolicy)
+      return resetPolicy
     } catch (error) {
       lastError = error
     }
