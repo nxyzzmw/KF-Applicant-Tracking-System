@@ -88,6 +88,43 @@ function parseJsonSafely(raw: string): JsonObject | undefined {
   }
 }
 
+function isRefreshEndpointPath(path: string): boolean {
+  const normalized = path.trim().toLowerCase()
+  return normalized.includes('/auth/refresh') || normalized.includes('/auth/refresh-token')
+}
+
+function extractTokenValue(payload: JsonObject | undefined): string | null {
+  if (!payload) return null
+  const direct =
+    (payload.accessToken as string | undefined) ??
+    (payload.token as string | undefined) ??
+    (payload.access_token as string | undefined)
+  if (direct) return direct
+
+  const nested = payload.data as JsonObject | undefined
+  return (
+    (nested?.accessToken as string | undefined) ??
+    (nested?.token as string | undefined) ??
+    (nested?.access_token as string | undefined) ??
+    null
+  )
+}
+
+function extractRefreshTokenValue(payload: JsonObject | undefined): string | null {
+  if (!payload) return null
+  const direct =
+    (payload.refreshToken as string | undefined) ??
+    (payload.refresh_token as string | undefined)
+  if (direct) return direct
+
+  const nested = payload.data as JsonObject | undefined
+  return (
+    (nested?.refreshToken as string | undefined) ??
+    (nested?.refresh_token as string | undefined) ??
+    null
+  )
+}
+
 function toApiErrorMessage(raw: string, parsed: JsonObject | undefined, status: number, requestUrl: string): string {
   return (
     (parsed && typeof parsed.message === 'string' && parsed.message) ||
@@ -126,7 +163,7 @@ function handleRefreshFailure() {
 }
 
 async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = getRefreshToken() || localStorage.getItem('refreshToken')
+  const refreshToken = getRefreshToken()
   if (!refreshToken) return null
 
   if (refreshInFlight) return refreshInFlight
@@ -145,12 +182,10 @@ async function refreshAccessToken(): Promise<string | null> {
           const raw = await response.text()
           const parsed = parseJsonSafely(raw)
           if (!response.ok || !parsed) continue
-          const nextAccess = (parsed.accessToken as string | undefined) ?? (parsed.token as string | undefined)
-          const nextRefresh = (parsed.refreshToken as string | undefined) ?? refreshToken
+          const nextAccess = extractTokenValue(parsed)
+          const nextRefresh = extractRefreshTokenValue(parsed) ?? refreshToken
           if (!nextAccess) continue
           setTokens(nextAccess, nextRefresh)
-          localStorage.setItem('accessToken', nextAccess)
-          localStorage.setItem('refreshToken', nextRefresh)
           return nextAccess
         } catch {
           // try next endpoint
@@ -168,6 +203,8 @@ async function refreshAccessToken(): Promise<string | null> {
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = 'GET', body, headers, _retry = false } = options
   const accessToken = getAccessToken()
+  const hasRefreshToken = Boolean(getRefreshToken())
+  const isRefreshCall = isRefreshEndpointPath(path)
   const backendLabel = API_BASE_URLS.join(', ')
   let lastError: ApiError | null = null
 
@@ -213,7 +250,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     if (!response.ok) {
       const message = toApiErrorMessage(raw, parsed, response.status, requestUrl)
 
-      if (response.status === 401 && message === 'User authentication required' && !_retry) {
+      if (response.status === 401 && !_retry && !isRefreshCall && hasRefreshToken) {
         const refreshedToken = await refreshAccessToken()
         if (refreshedToken) {
           return apiRequest<T>(path, { ...options, _retry: true })

@@ -24,6 +24,7 @@ import {
 import type { JobRecord } from '../../features/jobs/jobTypes'
 import { useToast } from '../../components/common/ToastProvider'
 import { getErrorMessage } from '../../utils/errorUtils'
+import { getUsers, type ManagedUser } from '../../features/users/usersAdminAPI'
 
 type CandidateDetailPageProps = {
   candidateId: string
@@ -70,6 +71,8 @@ function CandidateDetailPage({
   const [editValues, setEditValues] = useState<CandidateFormValues | null>(null)
   const [timeline, setTimeline] = useState<CandidateTimelineEvent[]>([])
   const [interviewsLoading, setInterviewsLoading] = useState(false)
+  const [interviewers, setInterviewers] = useState<ManagedUser[]>([])
+  const [expandedJourneyStages, setExpandedJourneyStages] = useState<Set<CandidateStatus>>(new Set())
   const [interviewForm, setInterviewForm] = useState<{
     stage: InterviewStage
     interviewerId: string
@@ -136,6 +139,27 @@ function CandidateDetailPage({
     })
   }, [candidate])
 
+  useEffect(() => {
+    if (!candidate) return
+    setExpandedJourneyStages(new Set([candidate.status]))
+  }, [candidate?.id, candidate?.status])
+
+  function toggleJourneyStage(stage: CandidateStatus) {
+    setExpandedJourneyStages((prev) => {
+      const next = new Set(prev)
+      if (next.has(stage)) next.delete(stage)
+      else next.add(stage)
+      return next
+    })
+  }
+
+  function getJourneyPriorityLabel(item: { stage: CandidateStatus; state: string }): string {
+    if (item.stage === 'Offer Accepted') return 'Final Goal'
+    if (item.state === 'done') return 'Completed'
+    if (item.state === 'current') return 'In Progress'
+    return 'Pending'
+  }
+
   async function loadCandidate() {
     setLoading(true)
     setError(null)
@@ -178,6 +202,18 @@ function CandidateDetailPage({
     }
     void loadTimelineAndInterviews()
   }, [candidateId])
+
+  useEffect(() => {
+    async function loadInterviewers() {
+      try {
+        const users = await getUsers()
+        setInterviewers(users.filter((user) => user.role === 'Interview Panel' && user.isActive))
+      } catch {
+        setInterviewers([])
+      }
+    }
+    void loadInterviewers()
+  }, [])
 
   if (loading) return <p className="panel-message">Loading candidate details...</p>
   if (error) return <p className="panel-message panel-message--error">{error} <button onClick={() => void loadCandidate()}>Retry</button></p>
@@ -261,339 +297,432 @@ function CandidateDetailPage({
         </div>
       </section>
 
-      <section className="details-grid">
-        <article className="editor-card">
-          <h3>Profile</h3>
-          <ul className="details-list">
-            <li>
-              <span>Email</span>
-              <strong>
-                {isEditing ? (
-                  <input value={editValues?.email ?? ''} onChange={(event) => setEditValues((prev) => (prev ? { ...prev, email: event.target.value } : prev))} />
-                ) : (
-                  candidate.email
-                )}
-              </strong>
-            </li>
-            <li>
-              <span>Contact</span>
-              <strong>
-                {isEditing ? (
-                  <input
-                    value={editValues?.contactDetails ?? ''}
-                    onChange={(event) => setEditValues((prev) => (prev ? { ...prev, contactDetails: event.target.value } : prev))}
-                  />
-                ) : (
-                  candidate.contactDetails
-                )}
-              </strong>
-            </li>
-            <li>
-              <span>Location</span>
-              <strong>
-                {isEditing ? (
-                  <input value={editValues?.location ?? ''} onChange={(event) => setEditValues((prev) => (prev ? { ...prev, location: event.target.value } : prev))} />
-                ) : (
-                  candidate.location
-                )}
-              </strong>
-            </li>
-            <li>
-              <span>Skills</span>
-              <strong>
-                {isEditing ? (
-                  <input value={editValues?.skills ?? ''} onChange={(event) => setEditValues((prev) => (prev ? { ...prev, skills: event.target.value } : prev))} />
-                ) : (
-                  candidate.skills.join(', ') || 'No skills added'
-                )}
-              </strong>
-            </li>
-            <li>
-              <span>Experience</span>
-              <strong>
-                {isEditing ? (
-                  <input
-                    type="number"
-                    min={0}
-                    value={editValues?.experience ?? '0'}
-                    onChange={(event) => setEditValues((prev) => (prev ? { ...prev, experience: event.target.value } : prev))}
-                  />
-                ) : (
-                  `${candidate.experience} years`
-                )}
-              </strong>
-            </li>
-            <li>
-              <span>Notice Period</span>
-              <strong>
-                {isEditing ? (
-                  <input
-                    type="number"
-                    min={0}
-                    value={editValues?.noticePeriod ?? '0'}
-                    onChange={(event) => setEditValues((prev) => (prev ? { ...prev, noticePeriod: event.target.value } : prev))}
-                  />
-                ) : (
-                  `${candidate.noticePeriod} days`
-                )}
-              </strong>
-            </li>
-          </ul>
-        </article>
+      <section className="candidate-detail-layout">
+        <div className="candidate-detail-layout__row">
+          <article className="editor-card">
+            <h3>Profile</h3>
+            <ul className="details-list">
+              <li>
+                <span>Email</span>
+                <strong>
+                  {isEditing ? (
+                    <input value={editValues?.email ?? ''} onChange={(event) => setEditValues((prev) => (prev ? { ...prev, email: event.target.value } : prev))} />
+                  ) : (
+                    candidate.email
+                  )}
+                </strong>
+              </li>
+              <li>
+                <span>Contact</span>
+                <strong>
+                  {isEditing ? (
+                    <input
+                      value={editValues?.contactDetails ?? ''}
+                      onChange={(event) => setEditValues((prev) => (prev ? { ...prev, contactDetails: event.target.value } : prev))}
+                    />
+                  ) : (
+                    candidate.contactDetails
+                  )}
+                </strong>
+              </li>
+              <li>
+                <span>Location</span>
+                <strong>
+                  {isEditing ? (
+                    <input value={editValues?.location ?? ''} onChange={(event) => setEditValues((prev) => (prev ? { ...prev, location: event.target.value } : prev))} />
+                  ) : (
+                    candidate.location
+                  )}
+                </strong>
+              </li>
+              <li>
+                <span>Skills</span>
+                <strong>
+                  {isEditing ? (
+                    <input value={editValues?.skills ?? ''} onChange={(event) => setEditValues((prev) => (prev ? { ...prev, skills: event.target.value } : prev))} />
+                  ) : (
+                    candidate.skills.join(', ') || 'No skills added'
+                  )}
+                </strong>
+              </li>
+              <li>
+                <span>Experience</span>
+                <strong>
+                  {isEditing ? (
+                    <input
+                      type="number"
+                      min={0}
+                      value={editValues?.experience ?? '0'}
+                      onChange={(event) => setEditValues((prev) => (prev ? { ...prev, experience: event.target.value } : prev))}
+                    />
+                  ) : (
+                    `${candidate.experience} years`
+                  )}
+                </strong>
+              </li>
+              <li>
+                <span>Notice Period</span>
+                <strong>
+                  {isEditing ? (
+                    <input
+                      type="number"
+                      min={0}
+                      value={editValues?.noticePeriod ?? '0'}
+                      onChange={(event) => setEditValues((prev) => (prev ? { ...prev, noticePeriod: event.target.value } : prev))}
+                    />
+                  ) : (
+                    `${candidate.noticePeriod} days`
+                  )}
+                </strong>
+              </li>
+            </ul>
+          </article>
 
-        <article className="editor-card">
-          <h3>Stage & Resume</h3>
-          <div className="field">
-            <label>Current Stage</label>
-            <select
-              value={candidate.status}
-              disabled={!canManageStage}
-              onChange={async (event) => {
-                try {
-                  const updated = await updateCandidateStatus(candidate.id, event.target.value as CandidateRecord['status'])
-                  setCandidate(updated)
-                  setEditValues(toFormValues(updated))
-                  onCandidateDataChanged?.()
-                  showToast('Candidate stage updated.', 'success')
-                } catch (statusError) {
-                  const message = getErrorMessage(statusError, 'Unable to update candidate status')
-                  setError(message)
-                  showToast(message, 'error')
-                }
-              }}
-            >
-              {CANDIDATE_STATUS_OPTIONS.map((status) => (
-                <option key={status} value={status}>
-                  {CANDIDATE_STATUS_LABELS[status]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Resume</label>
-            <p>{candidate.resume?.fileName || 'No resume uploaded yet.'}</p>
-            {candidate.resume?.filePath && (
-              <a href={candidate.resume.filePath} target="_blank" rel="noreferrer" className="table-action" style={{ marginBottom: '0.55rem' }}>
-                <span className="material-symbols-rounded">description</span>
-                <span>Preview Resume</span>
-              </a>
-            )}
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.txt"
-              disabled={!canEdit}
-              onChange={async (event) => {
-                const file = event.target.files?.[0]
-                if (!file) return
-                try {
-                  const updated = await uploadCandidateResume(candidate.id, file)
-                  setCandidate(updated)
-                  setEditValues(toFormValues(updated))
-                  showToast('Resume uploaded successfully.', 'success')
-                } catch (uploadError) {
-                  const message = getErrorMessage(uploadError, 'Unable to upload resume')
-                  setError(message)
-                  showToast(message, 'error')
-                }
-              }}
-            />
-          </div>
-        </article>
-      </section>
+          <article className="editor-card">
+            <h3>Application Journey & Timeline</h3>
+            <ul className="candidate-timeline">
+              {journeyItems.map((item) => {
+                const isExpanded = expandedJourneyStages.has(item.stage)
+                const stageHistory = [...(candidate.statusHistory ?? [])]
+                  .filter((entry) => entry.status === item.stage)
+                  .sort((first, second) => {
+                    const firstTime = first.updatedAt ? new Date(first.updatedAt).getTime() : 0
+                    const secondTime = second.updatedAt ? new Date(second.updatedAt).getTime() : 0
+                    return secondTime - firstTime
+                  })[0]
+                const interview = item.interviewForStage
+                return (
+                <li key={item.stage} className={`candidate-timeline__item is-${item.state}${isExpanded ? ' is-expanded' : ''}`}>
+                  <span className="candidate-timeline__dot">{item.state === 'done' ? '✓' : ''}</span>
+                  <div className="candidate-timeline__content">
+                    <div className="candidate-timeline__row">
+                      <strong>{CANDIDATE_STATUS_LABELS[item.stage]}</strong>
+                      <div className="candidate-timeline__row-actions">
+                        <small
+                          className={`candidate-timeline__status stage-${item.state}${item.stage === 'Offer Accepted' ? ' is-final' : ''}`}
+                        >
+                          {getJourneyPriorityLabel(item)}
+                        </small>
+                        <button
+                          type="button"
+                          className="candidate-timeline__toggle"
+                          onClick={() => toggleJourneyStage(item.stage)}
+                          aria-expanded={isExpanded}
+                          aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${CANDIDATE_STATUS_LABELS[item.stage]} details`}
+                        >
+                          <span className="material-symbols-rounded" aria-hidden="true">
+                            {isExpanded ? 'expand_less' : 'expand_more'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                    {item.date && !isExpanded && (
+                      <small>{new Date(item.date).toLocaleDateString()}</small>
+                    )}
+                    {isExpanded && (
+                      <div className="candidate-timeline__details">
+                        {stageHistory?.updatedAt && (
+                          <p>
+                            <strong>Moved At:</strong> {new Date(stageHistory.updatedAt).toLocaleString()}
+                          </p>
+                        )}
+                        {(stageHistory?.updatedByName || stageHistory?.updatedByEmail) && (
+                          <p>
+                            <strong>Updated By:</strong> {stageHistory.updatedByName || stageHistory.updatedByEmail}
+                          </p>
+                        )}
+                        {stageHistory?.comment && (
+                          <p>
+                            <strong>Comment:</strong> {stageHistory.comment}
+                          </p>
+                        )}
+                        {interview?.scheduledAt && (
+                          <p>
+                            <strong>Interview Time:</strong> {new Date(interview.scheduledAt).toLocaleString()}
+                          </p>
+                        )}
+                        {interview?.interviewer?.name && (
+                          <p>
+                            <strong>Interviewer:</strong> {interview.interviewer.name}
+                          </p>
+                        )}
+                        {interview?.result && (
+                          <p>
+                            <strong>Result:</strong> {interview.result}
+                          </p>
+                        )}
+                        {interview?.completedAt && (
+                          <p>
+                            <strong>Completed At:</strong> {new Date(interview.completedAt).toLocaleString()}
+                          </p>
+                        )}
+                        {interview?.feedback && (
+                          <p>
+                            <strong>Feedback:</strong> {interview.feedback}
+                          </p>
+                        )}
+                        {interview?.location && (
+                          <p>
+                            <strong>Location:</strong> {interview.location}
+                          </p>
+                        )}
+                        {interview?.meetingLink && (
+                          <p>
+                            <strong>Meeting Link:</strong>{' '}
+                            <a href={interview.meetingLink} target="_blank" rel="noreferrer">
+                              Open link
+                            </a>
+                          </p>
+                        )}
+                        {!stageHistory && !interview?.scheduledAt && (
+                          <p>No additional details yet for this stage.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </li>
+              )})}
+            </ul>
+          </article>
+        </div>
 
-      <section className="overview-grid">
-        <article className="overview-card">
-          <h3>
-            <span className="material-symbols-rounded">event</span>
-            <span>Interview Schedule</span>
-          </h3>
-          {interviewsLoading && <p className="overview-note">Loading interviews...</p>}
-          <div className="field-row">
+        <div className="candidate-detail-layout__row">
+          <article className="editor-card">
+            <h3>Stage & Resume</h3>
             <div className="field">
-              <label>Stage</label>
+              <label>Current Stage</label>
               <select
-                value={interviewForm.stage}
-                disabled={!canEdit}
-                onChange={(event) => setInterviewForm((prev) => ({ ...prev, stage: event.target.value as InterviewStage }))}
+                value={candidate.status}
+                disabled={!canManageStage}
+                onChange={async (event) => {
+                  try {
+                    const updated = await updateCandidateStatus(candidate.id, event.target.value as CandidateRecord['status'])
+                    setCandidate(updated)
+                    setEditValues(toFormValues(updated))
+                    onCandidateDataChanged?.()
+                    showToast('Candidate stage updated.', 'success')
+                  } catch (statusError) {
+                    const message = getErrorMessage(statusError, 'Unable to update candidate status')
+                    setError(message)
+                    showToast(message, 'error')
+                  }
+                }}
               >
-                {INTERVIEW_STAGE_OPTIONS.map((stage) => (
-                  <option key={stage} value={stage}>
-                    {stage}
+                {CANDIDATE_STATUS_OPTIONS.map((status) => (
+                  <option key={status} value={status}>
+                    {CANDIDATE_STATUS_LABELS[status]}
                   </option>
                 ))}
               </select>
             </div>
             <div className="field">
-              <label>Interviewer ID</label>
+              <label>Resume</label>
+              <p>{candidate.resume?.fileName || 'No resume uploaded yet.'}</p>
+              {candidate.resume?.filePath && (
+                <a href={candidate.resume.filePath} target="_blank" rel="noreferrer" className="table-action" style={{ marginBottom: '0.55rem' }}>
+                  <span className="material-symbols-rounded">description</span>
+                  <span>Preview Resume</span>
+                </a>
+              )}
               <input
-                value={interviewForm.interviewerId}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
                 disabled={!canEdit}
-                onChange={(event) => setInterviewForm((prev) => ({ ...prev, interviewerId: event.target.value }))}
+                onChange={async (event) => {
+                  const file = event.target.files?.[0]
+                  if (!file) return
+                  try {
+                    const updated = await uploadCandidateResume(candidate.id, file)
+                    setCandidate(updated)
+                    setEditValues(toFormValues(updated))
+                    showToast('Resume uploaded successfully.', 'success')
+                  } catch (uploadError) {
+                    const message = getErrorMessage(uploadError, 'Unable to upload resume')
+                    setError(message)
+                    showToast(message, 'error')
+                  }
+                }}
               />
             </div>
-          </div>
-          <div className="field-row">
-            <div className="field">
-              <label>Scheduled At (IST)</label>
-              <input
-                type="datetime-local"
-                value={interviewForm.scheduledAt}
-                disabled={!canEdit}
-                onChange={(event) => setInterviewForm((prev) => ({ ...prev, scheduledAt: event.target.value }))}
-              />
-            </div>
-            <div className="field">
-              <label>Duration (minutes)</label>
-              <input
-                type="number"
-                min={15}
-                value={interviewForm.duration}
-                disabled={!canEdit}
-                onChange={(event) => setInterviewForm((prev) => ({ ...prev, duration: event.target.value }))}
-              />
-            </div>
-          </div>
-          <div className="field-row">
-            <div className="field">
-              <label>Meeting Link</label>
-              <input
-                value={interviewForm.meetingLink}
-                disabled={!canEdit}
-                onChange={(event) => setInterviewForm((prev) => ({ ...prev, meetingLink: event.target.value }))}
-              />
-            </div>
-            <div className="field">
-              <label>Location</label>
-              <input
-                value={interviewForm.location}
-                disabled={!canEdit}
-                onChange={(event) => setInterviewForm((prev) => ({ ...prev, location: event.target.value }))}
-              />
-            </div>
-          </div>
-          <button
-            type="button"
-            className="ghost-btn"
-            disabled={!canEdit}
-            onClick={async () => {
-              if (!candidate) return
-              if (!interviewForm.interviewerId.trim() || !interviewForm.scheduledAt.trim()) {
-                showToast('Interviewer ID and scheduled date-time are required.', 'error')
-                return
-              }
-              try {
-                const updated = await addInterviewToCandidate(candidate.id, {
-                  stage: interviewForm.stage,
-                  interviewerId: interviewForm.interviewerId.trim(),
-                  scheduledAt: interviewForm.scheduledAt,
-                  duration: Number(interviewForm.duration) || 60,
-                  meetingLink: interviewForm.meetingLink.trim() || undefined,
-                  location: interviewForm.location.trim() || undefined,
-                })
-                setCandidate(updated)
-                onInterviewAlert?.('Interview Scheduled', `${candidate.name} scheduled for ${interviewForm.stage}.`)
-                showToast('Interview scheduled.', 'success')
-              } catch (addInterviewError) {
-                const message = getErrorMessage(addInterviewError, 'Unable to schedule interview')
-                showToast(message, 'error')
-              }
-            }}
-          >
-            Schedule Interview
-          </button>
-          <ul className="overview-list">
-            {(candidate.interviews ?? []).length === 0 && <li className="overview-list__empty">No interviews scheduled.</li>}
-            {(candidate.interviews ?? []).map((interview: CandidateInterview, index) => (
-              <li key={`${interview._id ?? index}`}>
-                <span className="material-symbols-rounded">event</span>
-                <span>
-                  <strong>{interview.stage}</strong>
-                  <small>
-                    {interview.interviewer?.name || 'Interviewer pending'} •{' '}
-                    {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleString() : 'No date'}
-                  </small>
-                </span>
-                {canEdit && interview._id && (
-                  <button
-                    type="button"
-                    className="ghost-btn"
-                    onClick={async () => {
-                      try {
-                        const nextResult = interview.result === 'Passed' ? 'Failed' : 'Passed'
-                        const updated = await updateInterviewForCandidate(candidate.id, interview._id as string, {
-                          result: nextResult,
-                          completedAt: new Date().toISOString(),
-                        })
-                        setCandidate(updated)
-                        onInterviewAlert?.('Interview Result Updated', `${candidate.name} interview marked as ${nextResult}.`)
-                        showToast(`Interview marked ${nextResult}.`, 'success')
-                      } catch (updateError) {
-                        const message = getErrorMessage(updateError, 'Unable to update interview result')
-                        showToast(message, 'error')
-                      }
-                    }}
-                  >
-                    {INTERVIEW_RESULT_OPTIONS.includes((interview.result ?? 'Pending') as (typeof INTERVIEW_RESULT_OPTIONS)[number])
-                      ? interview.result
-                      : 'Update Result'}
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </article>
-      </section>
+          </article>
 
-      <section className="editor-grid">
-        <article className="editor-card">
-          <h3>Application Journey & Timeline</h3>
-          <ul className="candidate-timeline">
-            {journeyItems.map((item) => (
-              <li key={item.stage} className={`candidate-timeline__item is-${item.state}`}>
-                <span className="candidate-timeline__dot">{item.state === 'done' ? '✓' : ''}</span>
-                <div className="candidate-timeline__content">
-                  <div className="candidate-timeline__row">
-                    <strong>{CANDIDATE_STATUS_LABELS[item.stage]}</strong>
-                    <small>{item.date ? new Date(item.date).toLocaleDateString() : item.state === 'upcoming' ? 'Pending' : 'In progress'}</small>
-                  </div>
-                  {item.interviewForStage?.scheduledAt && (
+          <article className="overview-card candidate-interview-card">
+            <h3>
+              <span className="material-symbols-rounded">event</span>
+              <span>Interview Schedule</span>
+            </h3>
+            {interviewsLoading && <p className="overview-note">Loading interviews...</p>}
+            <div className="field-row">
+              <div className="field">
+                <label>Stage</label>
+                <select
+                  value={interviewForm.stage}
+                  disabled={!canEdit}
+                  onChange={(event) => setInterviewForm((prev) => ({ ...prev, stage: event.target.value as InterviewStage }))}
+                >
+                  {INTERVIEW_STAGE_OPTIONS.map((stage) => (
+                    <option key={stage} value={stage}>
+                      {stage}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Select Interviewer (Interview Panel)</label>
+                <select
+                  value={interviewForm.interviewerId}
+                  disabled={!canEdit}
+                  onChange={(event) => setInterviewForm((prev) => ({ ...prev, interviewerId: event.target.value }))}
+                >
+                  <option value="">Select interviewer</option>
+                  {interviewers.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {`${user.firstName} ${user.lastName}`.trim()} ({user.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label>Scheduled At (IST)</label>
+                <input
+                  type="datetime-local"
+                  value={interviewForm.scheduledAt}
+                  disabled={!canEdit}
+                  onChange={(event) => setInterviewForm((prev) => ({ ...prev, scheduledAt: event.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label>Duration (minutes)</label>
+                <input
+                  type="number"
+                  min={15}
+                  value={interviewForm.duration}
+                  disabled={!canEdit}
+                  onChange={(event) => setInterviewForm((prev) => ({ ...prev, duration: event.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="field-row">
+              <div className="field">
+                <label>Meeting Link</label>
+                <input
+                  value={interviewForm.meetingLink}
+                  disabled={!canEdit}
+                  onChange={(event) => setInterviewForm((prev) => ({ ...prev, meetingLink: event.target.value }))}
+                />
+              </div>
+              <div className="field">
+                <label>Location</label>
+                <input
+                  value={interviewForm.location}
+                  disabled={!canEdit}
+                  onChange={(event) => setInterviewForm((prev) => ({ ...prev, location: event.target.value }))}
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              className="primary-btn candidate-interview-card__submit"
+              disabled={!canEdit}
+              onClick={async () => {
+                if (!candidate) return
+                if (!interviewForm.interviewerId.trim() || !interviewForm.scheduledAt.trim()) {
+                  showToast('Interviewer and scheduled date-time are required.', 'error')
+                  return
+                }
+                try {
+                  const updated = await addInterviewToCandidate(candidate.id, {
+                    stage: interviewForm.stage,
+                    interviewerId: interviewForm.interviewerId.trim(),
+                    scheduledAt: interviewForm.scheduledAt,
+                    duration: Number(interviewForm.duration) || 60,
+                    meetingLink: interviewForm.meetingLink.trim() || undefined,
+                    location: interviewForm.location.trim() || undefined,
+                  })
+                  setCandidate(updated)
+                  onInterviewAlert?.('Interview Scheduled', `${candidate.name} scheduled for ${interviewForm.stage}.`)
+                  showToast('Interview scheduled.', 'success')
+                } catch (addInterviewError) {
+                  const message = getErrorMessage(addInterviewError, 'Unable to schedule interview')
+                  showToast(message, 'error')
+                }
+              }}
+            >
+              Schedule Interview
+            </button>
+            <ul className="overview-list candidate-interview-card__list">
+              {(candidate.interviews ?? []).length === 0 && <li className="overview-list__empty">No interviews scheduled.</li>}
+              {(candidate.interviews ?? []).map((interview: CandidateInterview, index) => (
+                <li key={`${interview._id ?? index}`}>
+                  <span className="material-symbols-rounded">event</span>
+                  <span>
+                    <strong>{interview.stage}</strong>
                     <small>
-                      Scheduled: {new Date(item.interviewForStage.scheduledAt).toLocaleString()}
-                      {item.interviewForStage.interviewer?.name ? ` • Interview with ${item.interviewForStage.interviewer.name}` : ''}
+                      {interview.interviewer?.name || 'Interviewer pending'} •{' '}
+                      {interview.scheduledAt ? new Date(interview.scheduledAt).toLocaleString() : 'No date'}
                     </small>
+                  </span>
+                  {canEdit && interview._id && (
+                    <button
+                      type="button"
+                      className="ghost-btn candidate-interview-card__result"
+                      onClick={async () => {
+                        try {
+                          const nextResult = interview.result === 'Passed' ? 'Failed' : 'Passed'
+                          const updated = await updateInterviewForCandidate(candidate.id, interview._id as string, {
+                            result: nextResult,
+                            completedAt: new Date().toISOString(),
+                          })
+                          setCandidate(updated)
+                          onInterviewAlert?.('Interview Result Updated', `${candidate.name} interview marked as ${nextResult}.`)
+                          showToast(`Interview marked ${nextResult}.`, 'success')
+                        } catch (updateError) {
+                          const message = getErrorMessage(updateError, 'Unable to update interview result')
+                          showToast(message, 'error')
+                        }
+                      }}
+                    >
+                      {INTERVIEW_RESULT_OPTIONS.includes((interview.result ?? 'Pending') as (typeof INTERVIEW_RESULT_OPTIONS)[number])
+                        ? interview.result
+                        : 'Update Result'}
+                    </button>
                   )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </article>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </div>
 
-        <article className="editor-card">
-          <h3>Activity Timeline</h3>
-          <ul className="overview-list">
-            {activityItems.length === 0 && <li className="overview-list__empty">No activity captured yet.</li>}
-            {activityItems.map((item) => (
-              <li key={item.id}>
-                <span className="material-symbols-rounded">sync_alt</span>
-                <span>
-                  <strong>{item.label}</strong>
-                  <small>{item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Recently updated'}</small>
-                </span>
-              </li>
-            ))}
-            {timeline.map((item, index) => (
-              <li key={`timeline-${index}`}>
-                <span className="material-symbols-rounded">
-                  {item.type === 'status_change' ? 'sync_alt' : item.type === 'interview_completed' ? 'task_alt' : 'event_upcoming'}
-                </span>
-                <span>
-                  <strong>{item.type.replaceAll('_', ' ')}</strong>
-                  <small>{item.date ? new Date(item.date).toLocaleString() : 'Recently updated'}</small>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </article>
+        <section className="candidate-detail-layout__activity">
+          <article className="editor-card candidate-activity-card">
+            <h3>Activity Timeline</h3>
+            <ul className="overview-list">
+              {activityItems.length === 0 && <li className="overview-list__empty">No activity captured yet.</li>}
+              {activityItems.map((item) => (
+                <li key={item.id}>
+                  <span className="material-symbols-rounded">sync_alt</span>
+                  <span>
+                    <strong>{item.label}</strong>
+                    <small>{item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Recently updated'}</small>
+                  </span>
+                </li>
+              ))}
+              {timeline.map((item, index) => (
+                <li key={`timeline-${index}`}>
+                  <span className="material-symbols-rounded">
+                    {item.type === 'status_change' ? 'sync_alt' : item.type === 'interview_completed' ? 'task_alt' : 'event_upcoming'}
+                  </span>
+                  <span>
+                    <strong>{item.type.replaceAll('_', ' ')}</strong>
+                    <small>{item.date ? new Date(item.date).toLocaleString() : 'Recently updated'}</small>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </section>
       </section>
     </>
   )

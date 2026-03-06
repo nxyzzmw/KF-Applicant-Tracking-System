@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { JobRecord, JobStatus } from '../../features/jobs/jobTypes'
 import { formatDisplayDateIN } from '../../utils/dateUtils'
 import { SkeletonRows } from '../../components/common/Loader'
@@ -136,6 +136,15 @@ function JobListPage({
   const [listPage, setListPage] = useState(1)
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set())
   const [bulkStatus, setBulkStatus] = useState<JobStatus>('Open')
+  const boardRef = useRef<HTMLElement | null>(null)
+  const boardDragRef = useRef<{ active: boolean; startX: number; startScrollLeft: number }>({
+    active: false,
+    startX: 0,
+    startScrollLeft: 0,
+  })
+  const boardPanRafRef = useRef<number | null>(null)
+  const boardPanTargetRef = useRef<number | null>(null)
+  const didCardDragRef = useRef(false)
   const LIST_PAGE_SIZE = 8
   const departments = useMemo(
     () => Array.from(new Set(jobs.map((job) => job.department))).sort((a, b) => a.localeCompare(b)),
@@ -285,6 +294,83 @@ function JobListPage({
     if (!canEditJob || selectedRows.length === 0) return
     selectedRows.forEach((job) => onStatusChange(job, bulkStatus))
     setSelectedJobIds(new Set())
+  }
+
+  function handleBoardMouseDown(event: React.MouseEvent<HTMLElement>) {
+    if (viewMode !== 'board') return
+    if (event.button !== 0) return
+    if (!(event.target instanceof Element)) return
+    if (event.target.closest('button, select, input, a, textarea, [draggable="true"]')) return
+    const board = boardRef.current
+    if (!board) return
+    event.preventDefault()
+    boardDragRef.current = {
+      active: true,
+      startX: event.clientX,
+      startScrollLeft: board.scrollLeft,
+    }
+    board.classList.add('is-dragging')
+  }
+
+  function handleBoardMouseMove(event: React.MouseEvent<HTMLElement>) {
+    if (!boardDragRef.current.active) return
+    const board = boardRef.current
+    if (!board) return
+    const delta = event.clientX - boardDragRef.current.startX
+    const target = boardDragRef.current.startScrollLeft - delta
+    boardPanTargetRef.current = target
+    if (boardPanRafRef.current !== null) return
+    const animate = () => {
+      const activeBoard = boardRef.current
+      const nextTarget = boardPanTargetRef.current
+      if (!activeBoard || nextTarget === null) {
+        boardPanRafRef.current = null
+        return
+      }
+      const current = activeBoard.scrollLeft
+      const diff = nextTarget - current
+      if (Math.abs(diff) < 0.75) {
+        activeBoard.scrollLeft = nextTarget
+        boardPanRafRef.current = null
+        return
+      }
+      activeBoard.scrollLeft = current + diff * 0.35
+      boardPanRafRef.current = window.requestAnimationFrame(animate)
+    }
+    boardPanRafRef.current = window.requestAnimationFrame(animate)
+  }
+
+  function stopBoardDrag() {
+    if (!boardDragRef.current.active) return
+    boardDragRef.current.active = false
+    boardRef.current?.classList.remove('is-dragging')
+    if (boardPanRafRef.current !== null) {
+      window.cancelAnimationFrame(boardPanRafRef.current)
+      boardPanRafRef.current = null
+    }
+    boardPanTargetRef.current = null
+  }
+
+  function autoScrollBoardWhileDragging(clientX: number) {
+    if (!dragJobId) return
+    const board = boardRef.current
+    if (!board) return
+
+    const rect = board.getBoundingClientRect()
+    const edgeThreshold = Math.max(56, Math.min(120, rect.width * 0.12))
+    let delta = 0
+
+    if (clientX < rect.left + edgeThreshold) {
+      const ratio = (rect.left + edgeThreshold - clientX) / edgeThreshold
+      delta = -Math.ceil(6 + ratio * 18)
+    } else if (clientX > rect.right - edgeThreshold) {
+      const ratio = (clientX - (rect.right - edgeThreshold)) / edgeThreshold
+      delta = Math.ceil(6 + ratio * 18)
+    }
+
+    if (delta !== 0) {
+      board.scrollLeft += delta
+    }
   }
 
   return (
@@ -535,10 +621,18 @@ function JobListPage({
       </section>}
 
       {!loading && !error && viewMode === 'board' && (
-        <section className="candidate-board">
+        <section
+          className="candidate-board"
+          ref={boardRef}
+          onMouseDown={handleBoardMouseDown}
+          onMouseMove={handleBoardMouseMove}
+          onMouseUp={stopBoardDrag}
+          onMouseLeave={stopBoardDrag}
+          onDragOver={(event) => autoScrollBoardWhileDragging(event.clientX)}
+        >
           {STATUS_OPTIONS.map((statusItem) => {
             const status = statusItem.value
-            const statusJobs = jobs.filter((job) => job.status === status)
+            const statusJobs = sortedJobs.filter((job) => job.status === status)
 
             return (
               <article
@@ -546,6 +640,7 @@ function JobListPage({
                 className={`candidate-column candidate-column--${status.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
                 onDragOver={(event) => {
                   if (!canEditJob) return
+                  autoScrollBoardWhileDragging(event.clientX)
                   event.preventDefault()
                   setDropStatus(status)
                 }}
@@ -554,7 +649,7 @@ function JobListPage({
                   if (!canEditJob) return
                   event.preventDefault()
                   if (dragJobId) {
-                    const dragged = jobs.find((job) => job.id === dragJobId)
+                    const dragged = sortedJobs.find((job) => job.id === dragJobId)
                     if (dragged && dragged.status !== status) {
                       onStatusChange(dragged, status)
                     }
@@ -577,15 +672,34 @@ function JobListPage({
                       key={job.id}
                       className="candidate-card"
                       draggable={canEditJob && !isExpired(job.targetClosureDate)}
-                      onDragStart={() => setDragJobId(job.id)}
+                      onClick={() => {
+                        if (didCardDragRef.current) return
+                        onView(job.id)
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          onView(job.id)
+                        }
+                      }}
+                      onDragStart={() => {
+                        stopBoardDrag()
+                        didCardDragRef.current = true
+                        setDragJobId(job.id)
+                      }}
                       onDragEnd={() => {
                         setDragJobId(null)
                         setDropStatus(null)
+                        window.setTimeout(() => {
+                          didCardDragRef.current = false
+                        }, 0)
                       }}
                     >
                       <div className="candidate-card__row">
                         <strong>{job.title}</strong>
-                        <span>{job.reqId}</span>
+                        <span>{job.reqId || 'ID pending'}</span>
                       </div>
                       <small>{job.department}</small>
                       <div className="candidate-card__quick-actions">
@@ -594,21 +708,24 @@ function JobListPage({
                             type="button"
                             className="candidate-card__quick-btn"
                             disabled={isExpired(job.targetClosureDate)}
-                            onClick={() => onStatusChange(job, previousStatus)}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onStatusChange(job, previousStatus)
+                            }}
                             aria-label={`Move ${job.title} back to ${statusLabel(previousStatus)}`}
                           >
-                            <span aria-hidden="true">←</span>
+                            <span className="material-symbols-rounded" aria-hidden="true">arrow_back</span>
                           </button>
                         )}
-                        <button type="button" className="candidate-card__quick-btn" onClick={() => onView(job.id)} aria-label={`View ${job.title}`}>
-                          <span className="material-symbols-rounded" aria-hidden="true">visibility</span>
-                        </button>
                         {canEditJob && (
                           <button
                             type="button"
                             className="candidate-card__quick-btn"
                             disabled={isExpired(job.targetClosureDate)}
-                            onClick={() => onEdit(job.id)}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onEdit(job.id)
+                            }}
                             aria-label={`Edit ${job.title}`}
                           >
                             <span className="material-symbols-rounded" aria-hidden="true">edit</span>
@@ -618,7 +735,10 @@ function JobListPage({
                           type="button"
                           className="candidate-card__quick-btn"
                           disabled={isExpired(job.targetClosureDate)}
-                          onClick={() => onManageCandidates(job.id)}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onManageCandidates(job.id)
+                          }}
                           aria-label={`Manage candidates for ${job.title}`}
                         >
                           <span className="material-symbols-rounded" aria-hidden="true">group</span>
@@ -628,10 +748,13 @@ function JobListPage({
                             type="button"
                             className="candidate-card__quick-btn"
                             disabled={isExpired(job.targetClosureDate)}
-                            onClick={() => onStatusChange(job, nextStatus)}
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onStatusChange(job, nextStatus)
+                            }}
                             aria-label={`Move ${job.title} forward to ${statusLabel(nextStatus)}`}
                           >
-                            <span aria-hidden="true">→</span>
+                            <span className="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
                           </button>
                         )}
                       </div>

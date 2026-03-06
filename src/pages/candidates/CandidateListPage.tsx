@@ -58,7 +58,6 @@ function CandidateListPage({
   const [viewMode, setViewMode] = useState<'list' | 'board'>('list')
   const [dragCandidateId, setDragCandidateId] = useState<string | null>(null)
   const [dropStatus, setDropStatus] = useState<CandidateStatus | null>(null)
-  const [boardPageByStatus, setBoardPageByStatus] = useState<Record<string, number>>({})
   const [listPage, setListPage] = useState(1)
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set())
   const [bulkStatus, setBulkStatus] = useState<CandidateStatus>('Screened')
@@ -75,7 +74,14 @@ function CandidateListPage({
   const [interviewers, setInterviewers] = useState<ManagedUser[]>([])
   const loadRequestIdRef = useRef(0)
   const boardRef = useRef<HTMLElement | null>(null)
-  const BOARD_PAGE_SIZE = 6
+  const boardDragRef = useRef<{ active: boolean; startX: number; startScrollLeft: number }>({
+    active: false,
+    startX: 0,
+    startScrollLeft: 0,
+  })
+  const boardPanRafRef = useRef<number | null>(null)
+  const boardPanTargetRef = useRef<number | null>(null)
+  const didCardDragRef = useRef(false)
   const LIST_PAGE_SIZE = 8
 
   const jobMap = useMemo(() => new Map(jobs.map((job) => [job.id, `${job.title} (${job.reqId})`])), [jobs])
@@ -154,6 +160,32 @@ function CandidateListPage({
     return null
   }
 
+  function getCandidateStatusUpdateErrorMessage(error: unknown): string {
+    const fallback = getErrorMessage(error, 'Unable to update candidate status')
+    const normalized = fallback.toLowerCase()
+
+    const feedbackMissing =
+      normalized.includes('interviews.') &&
+      normalized.includes('feedback') &&
+      normalized.includes('required')
+    const resultMissing =
+      normalized.includes('interviews.') &&
+      normalized.includes('result') &&
+      normalized.includes('required')
+
+    if (feedbackMissing || resultMissing) {
+      if (feedbackMissing && resultMissing) {
+        return 'Cannot move candidate stage. Add interview result and feedback first.'
+      }
+      if (feedbackMissing) {
+        return 'Cannot move candidate stage. Add interview feedback first.'
+      }
+      return 'Cannot move candidate stage. Add interview result first.'
+    }
+
+    return fallback
+  }
+
   async function handleStatusDrop(candidateId: string, status: CandidateStatus): Promise<CandidateRecord | null> {
     try {
       const updated = await updateCandidateStatus(candidateId, status)
@@ -171,14 +203,14 @@ function CandidateListPage({
           location: 'Microsoft Teams',
         })
       }
+      showToast('Candidate stage updated.', 'success')
       return updated
     } catch (statusError) {
-      const message = getErrorMessage(statusError, 'Unable to update candidate status')
+      const message = getCandidateStatusUpdateErrorMessage(statusError)
       setError(message)
       showToast(message, 'error')
       return null
     }
-    showToast('Candidate stage updated.', 'success')
   }
 
   async function handleScheduleInterview() {
@@ -226,6 +258,10 @@ function CandidateListPage({
 
   function getCandidateRoleLabel(candidate: CandidateRecord): string {
     return candidate.role || candidate.jobTitle || jobMap.get(candidate.jobID) || 'Role not mapped'
+  }
+
+  function getStageClassName(status: CandidateStatus): string {
+    return status.toLowerCase().replace(/[^a-z0-9]+/g, '-')
   }
 
   const sortedCandidates = useMemo(() => {
@@ -286,9 +322,86 @@ function CandidateListPage({
     setSelectedCandidateIds(new Set())
   }
 
+  function autoScrollBoardWhileDragging(clientX: number) {
+    if (!dragCandidateId) return
+    const board = boardRef.current
+    if (!board) return
+
+    const rect = board.getBoundingClientRect()
+    const edgeThreshold = Math.max(56, Math.min(120, rect.width * 0.12))
+    let delta = 0
+
+    if (clientX < rect.left + edgeThreshold) {
+      const ratio = (rect.left + edgeThreshold - clientX) / edgeThreshold
+      delta = -Math.ceil(6 + ratio * 18)
+    } else if (clientX > rect.right - edgeThreshold) {
+      const ratio = (clientX - (rect.right - edgeThreshold)) / edgeThreshold
+      delta = Math.ceil(6 + ratio * 18)
+    }
+
+    if (delta !== 0) {
+      board.scrollLeft += delta
+    }
+  }
+
+  function handleBoardMouseDown(event: React.MouseEvent<HTMLElement>) {
+    if (viewMode !== 'board') return
+    if (event.button !== 0) return
+    if (!(event.target instanceof Element)) return
+    if (event.target.closest('button, select, input, a, textarea, [draggable="true"]')) return
+    const board = boardRef.current
+    if (!board) return
+    event.preventDefault()
+    boardDragRef.current = {
+      active: true,
+      startX: event.clientX,
+      startScrollLeft: board.scrollLeft,
+    }
+    board.classList.add('is-dragging')
+  }
+
+  function handleBoardMouseMove(event: React.MouseEvent<HTMLElement>) {
+    if (!boardDragRef.current.active) return
+    const board = boardRef.current
+    if (!board) return
+    const delta = event.clientX - boardDragRef.current.startX
+    const target = boardDragRef.current.startScrollLeft - delta
+    boardPanTargetRef.current = target
+    if (boardPanRafRef.current !== null) return
+    const animate = () => {
+      const activeBoard = boardRef.current
+      const nextTarget = boardPanTargetRef.current
+      if (!activeBoard || nextTarget === null) {
+        boardPanRafRef.current = null
+        return
+      }
+      const current = activeBoard.scrollLeft
+      const diff = nextTarget - current
+      if (Math.abs(diff) < 0.75) {
+        activeBoard.scrollLeft = nextTarget
+        boardPanRafRef.current = null
+        return
+      }
+      activeBoard.scrollLeft = current + diff * 0.35
+      boardPanRafRef.current = window.requestAnimationFrame(animate)
+    }
+    boardPanRafRef.current = window.requestAnimationFrame(animate)
+  }
+
+  function stopBoardDrag() {
+    if (!boardDragRef.current.active) return
+    boardDragRef.current.active = false
+    boardRef.current?.classList.remove('is-dragging')
+    if (boardPanRafRef.current !== null) {
+      window.cancelAnimationFrame(boardPanRafRef.current)
+      boardPanRafRef.current = null
+    }
+    boardPanTargetRef.current = null
+  }
+
   return (
     <>
-      <section className="page-head">
+      <section className="page-head candidate-page-head">
         <div>
           <p className="breadcrumb">Candidates / Management</p>
           <h1>Candidate Management</h1>
@@ -333,13 +446,16 @@ function CandidateListPage({
         </div>
       </section>
 
-      <section className="filters-panel">
-        <input
-          type="search"
-          placeholder="Search candidate name or email..."
-          value={searchTerm}
-          onChange={(event) => onSearchTermChange(event.target.value)}
-        />
+      <section className="filters-panel candidate-filters-panel">
+        <label className="candidate-search-input">
+          <span className="material-symbols-rounded" aria-hidden="true">search</span>
+          <input
+            type="search"
+            placeholder="Search candidate name or email..."
+            value={searchTerm}
+            onChange={(event) => onSearchTermChange(event.target.value)}
+          />
+        </label>
         <select value={jobFilter} onChange={(event) => setJobFilter(event.target.value)} aria-label="Filter by role">
           <option value="all">Role</option>
           {jobs.map((job) => (
@@ -384,12 +500,12 @@ function CandidateListPage({
       )}
 
       {!loading && !error && viewMode === 'list' && (
-        <section className="table-panel">
+        <section className="table-panel candidate-table-panel">
           {sortedCandidates.length === 0 ? (
             <div className="ui-table__empty">No candidates found for current filters.</div>
           ) : (
             <div className="ui-table-wrap">
-              <table className="ui-table">
+              <table className="ui-table candidate-ui-table">
                 <thead>
                   <tr>
                     <th style={{ width: '48px' }}>
@@ -424,7 +540,11 @@ function CandidateListPage({
                         <div>{candidate.email}</div>
                         <div>{getCandidateRoleLabel(candidate)}</div>
                       </td>
-                      <td style={{ textAlign: 'center' }}>{CANDIDATE_STATUS_LABELS[candidate.status]}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span className={`candidate-stage-pill stage-${getStageClassName(candidate.status)}`}>
+                          {CANDIDATE_STATUS_LABELS[candidate.status]}
+                        </span>
+                      </td>
                       <td>{candidate.recruiter || candidate.referal || 'Unassigned'}</td>
                       <td style={{ textAlign: 'right' }}>
                         <div className="actions-cell">
@@ -464,34 +584,21 @@ function CandidateListPage({
 
       {!loading && !error && viewMode === 'board' && (
         <>
-        {canCreateCandidate && (
-          <div style={{ marginBottom: '0.6rem' }}>
-            <button type="button" className="primary-btn" onClick={onAddCandidate}>
-              <span className="material-symbols-rounded">person_add</span>
-              <span>Add Candidate</span>
-            </button>
-          </div>
-        )}
         <section
           className="candidate-board"
           ref={boardRef}
-          onDragOver={(event) => {
-            const container = boardRef.current
-            if (!container) return
-            const rect = container.getBoundingClientRect()
-            const edge = 120
-            if (event.clientX < rect.left + edge) {
-              container.scrollLeft -= 16
-            } else if (event.clientX > rect.right - edge) {
-              container.scrollLeft += 16
-            }
-          }}
+          onMouseDown={handleBoardMouseDown}
+          onMouseMove={handleBoardMouseMove}
+          onMouseUp={stopBoardDrag}
+          onMouseLeave={stopBoardDrag}
+          onDragOver={(event) => autoScrollBoardWhileDragging(event.clientX)}
         >
           {CANDIDATE_STATUS_OPTIONS.map((status) => (
             <article
               key={status}
               className={`candidate-column candidate-column--${status.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
               onDragOver={(event) => {
+                autoScrollBoardWhileDragging(event.clientX)
                 event.preventDefault()
                 setDropStatus(status)
               }}
@@ -505,20 +612,15 @@ function CandidateListPage({
               data-drop-target={dropStatus === status ? 'true' : 'false'}
             >
               {(() => {
-                const stageCandidates = candidates.filter((candidate) => candidate.status === status)
-                const page = boardPageByStatus[status] ?? 1
-                const pageCount = Math.max(1, Math.ceil(stageCandidates.length / BOARD_PAGE_SIZE))
-                const safePage = Math.min(page, pageCount)
-                const start = (safePage - 1) * BOARD_PAGE_SIZE
-                const pagedCandidates = stageCandidates.slice(start, start + BOARD_PAGE_SIZE)
+                const stageCandidates = sortedCandidates.filter((candidate) => candidate.status === status)
                 return (
                   <>
               <h3>
                 <span>{CANDIDATE_STATUS_LABELS[status]}</span>
                     <small>{stageCandidates.length}</small>
               </h3>
-              <div className="candidate-column__list">
-                    {pagedCandidates.map((candidate) => {
+              <div className="candidate-column__list job-board__list">
+                    {stageCandidates.map((candidate) => {
                     const previousStage = getPreviousStage(candidate.status)
                     const nextStage = getNextStage(candidate.status)
                     return (
@@ -526,12 +628,22 @@ function CandidateListPage({
                         key={candidate.id}
                         className="candidate-card"
                         draggable={canManageCandidateStage}
-                        onDragStart={() => setDragCandidateId(candidate.id)}
+                        onDragStart={() => {
+                          stopBoardDrag()
+                          didCardDragRef.current = true
+                          setDragCandidateId(candidate.id)
+                        }}
                         onDragEnd={() => {
                           setDragCandidateId(null)
                           setDropStatus(null)
+                          window.setTimeout(() => {
+                            didCardDragRef.current = false
+                          }, 0)
                         }}
-                        onClick={() => onViewCandidate(candidate.id)}
+                        onClick={() => {
+                          if (didCardDragRef.current) return
+                          onViewCandidate(candidate.id)
+                        }}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(event) => {
@@ -559,7 +671,7 @@ function CandidateListPage({
                                 void handleStatusDrop(candidate.id, previousStage)
                               }}
                             >
-                              <span aria-hidden="true">←</span>
+                              <span className="material-symbols-rounded" aria-hidden="true">arrow_back</span>
                             </button>
                           )}
                           {nextStage && (
@@ -574,7 +686,7 @@ function CandidateListPage({
                                 void handleStatusDrop(candidate.id, nextStage)
                               }}
                             >
-                              <span aria-hidden="true">→</span>
+                              <span className="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
                             </button>
                           )}
                         </div>
@@ -585,13 +697,6 @@ function CandidateListPage({
                   <p className="candidate-column__empty">No candidates in this stage.</p>
                 )}
               </div>
-                    {pageCount > 1 && (
-                      <Pagination
-                        page={safePage}
-                        pageCount={pageCount}
-                        onPageChange={(nextPage) => setBoardPageByStatus((prev) => ({ ...prev, [status]: nextPage }))}
-                      />
-                    )}
                   </>
                 )
               })()}

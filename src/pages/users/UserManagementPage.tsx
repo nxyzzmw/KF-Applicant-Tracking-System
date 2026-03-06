@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useToast } from '../../components/common/ToastProvider'
 import { getRolePermissions, ROLE_OPTIONS, type AppRole, type RbacPolicy, type RolePermissions } from '../../features/auth/roleAccess'
 import { getRbacPolicy, updateRbacPolicy } from '../../features/auth/rbacAPI'
@@ -59,6 +59,10 @@ function getNextRole(current: AppRole): AppRole | null {
   return ROLE_OPTIONS[index + 1]
 }
 
+function roleClassName(roleValue: AppRole): string {
+  return roleValue.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+}
+
 function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicyUpdated }: UserManagementPageProps) {
   const { showToast } = useToast()
   const [pageMode, setPageMode] = useState<UserPageMode>('list')
@@ -77,6 +81,14 @@ function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicy
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
   const [rolePolicy, setRolePolicy] = useState<RbacPolicy | null>(null)
   const [editForm, setEditForm] = useState<EditUserForm | null>(null)
+  const boardRef = useRef<HTMLDivElement | null>(null)
+  const boardDragRef = useRef<{ active: boolean; startX: number; startScrollLeft: number }>({
+    active: false,
+    startX: 0,
+    startScrollLeft: 0,
+  })
+  const boardPanRafRef = useRef<number | null>(null)
+  const boardPanTargetRef = useRef<number | null>(null)
   const [form, setForm] = useState<CreateUserForm>({
     firstName: '',
     lastName: '',
@@ -271,6 +283,83 @@ function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicy
     await handleRoleChange(dragUserId, targetRole)
   }
 
+  function autoScrollBoardWhileDragging(clientX: number) {
+    if (!dragUserId) return
+    const board = boardRef.current
+    if (!board) return
+
+    const rect = board.getBoundingClientRect()
+    const edgeThreshold = Math.max(56, Math.min(120, rect.width * 0.12))
+    let delta = 0
+
+    if (clientX < rect.left + edgeThreshold) {
+      const ratio = (rect.left + edgeThreshold - clientX) / edgeThreshold
+      delta = -Math.ceil(6 + ratio * 18)
+    } else if (clientX > rect.right - edgeThreshold) {
+      const ratio = (clientX - (rect.right - edgeThreshold)) / edgeThreshold
+      delta = Math.ceil(6 + ratio * 18)
+    }
+
+    if (delta !== 0) {
+      board.scrollLeft += delta
+    }
+  }
+
+  function handleBoardMouseDown(event: React.MouseEvent<HTMLDivElement>) {
+    if (usersViewMode !== 'board') return
+    if (event.button !== 0) return
+    if (!(event.target instanceof Element)) return
+    if (event.target.closest('button, select, input, a, textarea, [draggable="true"]')) return
+    const board = boardRef.current
+    if (!board) return
+    event.preventDefault()
+    boardDragRef.current = {
+      active: true,
+      startX: event.clientX,
+      startScrollLeft: board.scrollLeft,
+    }
+    board.classList.add('is-dragging')
+  }
+
+  function handleBoardMouseMove(event: React.MouseEvent<HTMLDivElement>) {
+    if (!boardDragRef.current.active) return
+    const board = boardRef.current
+    if (!board) return
+    const delta = event.clientX - boardDragRef.current.startX
+    const target = boardDragRef.current.startScrollLeft - delta
+    boardPanTargetRef.current = target
+    if (boardPanRafRef.current !== null) return
+    const animate = () => {
+      const activeBoard = boardRef.current
+      const nextTarget = boardPanTargetRef.current
+      if (!activeBoard || nextTarget === null) {
+        boardPanRafRef.current = null
+        return
+      }
+      const current = activeBoard.scrollLeft
+      const diff = nextTarget - current
+      if (Math.abs(diff) < 0.75) {
+        activeBoard.scrollLeft = nextTarget
+        boardPanRafRef.current = null
+        return
+      }
+      activeBoard.scrollLeft = current + diff * 0.35
+      boardPanRafRef.current = window.requestAnimationFrame(animate)
+    }
+    boardPanRafRef.current = window.requestAnimationFrame(animate)
+  }
+
+  function stopBoardDrag() {
+    if (!boardDragRef.current.active) return
+    boardDragRef.current.active = false
+    boardRef.current?.classList.remove('is-dragging')
+    if (boardPanRafRef.current !== null) {
+      window.cancelAnimationFrame(boardPanRafRef.current)
+      boardPanRafRef.current = null
+    }
+    boardPanTargetRef.current = null
+  }
+
   async function handleToggleActive(user: ManagedUser) {
     if (!isSuperAdmin) return
     setUpdatingUserId(user.id)
@@ -375,10 +464,12 @@ function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicy
     const start = (usersSafePage - 1) * 10
     return sortedUsers.slice(start, start + 10)
   }, [sortedUsers, usersSafePage])
+  const usersRangeStart = sortedUsers.length === 0 ? 0 : (usersSafePage - 1) * 10 + 1
+  const usersRangeEnd = Math.min(usersSafePage * 10, sortedUsers.length)
 
   return (
     <>
-      <section className="page-head">
+      <section className="page-head user-page-head">
         <div>
           <p className="breadcrumb">Administration / Users</p>
           <h1>User & Access Management</h1>
@@ -419,28 +510,28 @@ function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicy
       </section>
 
       {pageMode === 'list' && (
-        <section className="table-panel">
-          <article className="editor-card">
-            <h3>
-              <span className="material-symbols-rounded">groups</span>
-              <span>All Users</span>
-            </h3>
-            <div className="filters-panel" style={{ marginBottom: '0.8rem' }}>
+        <>
+          <section className="filters-panel candidate-filters-panel user-filters-panel">
+            <label className="candidate-search-input">
+              <span className="material-symbols-rounded" aria-hidden="true">search</span>
               <input
                 type="search"
                 placeholder="Search by name, email, role..."
                 value={searchTerm}
                 onChange={(event) => onSearchTermChange(event.target.value)}
               />
-              <button type="button" className="ghost-btn clear-btn" onClick={() => onSearchTermChange('')}>
-                Clear
-              </button>
-            </div>
-            {loadingUsers && <p className="overview-note">Loading users...</p>}
-            {usersError && <p className="panel-message panel-message--error">{usersError}</p>}
-            {!loadingUsers && !usersError && sortedUsers.length === 0 && <p className="overview-note">No users available.</p>}
+            </label>
+            <button type="button" className="ghost-btn clear-btn" onClick={() => onSearchTermChange('')}>
+              Clear All
+            </button>
+          </section>
 
-            {!loadingUsers && sortedUsers.length > 0 && usersViewMode === 'list' && (
+          {loadingUsers && <p className="overview-note">Loading users...</p>}
+          {usersError && <p className="panel-message panel-message--error">{usersError}</p>}
+          {!loadingUsers && !usersError && sortedUsers.length === 0 && <p className="overview-note">No users available.</p>}
+
+          {!loadingUsers && sortedUsers.length > 0 && usersViewMode === 'list' && (
+            <section className="table-panel user-table-panel">
               <div className="ui-table-wrap">
                 <table className="ui-table">
                   <thead>
@@ -496,20 +587,35 @@ function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicy
                     ))}
                 </tbody>
               </table>
-              <Pagination page={usersSafePage} pageCount={usersPageCount} onPageChange={setUsersPage} />
-            </div>
+              </div>
+              <div className="table-footer">
+                <p>
+                  Showing <strong>{usersRangeStart}</strong> to <strong>{usersRangeEnd}</strong> of <strong>{sortedUsers.length}</strong> users
+                </p>
+                <Pagination page={usersSafePage} pageCount={usersPageCount} onPageChange={setUsersPage} />
+              </div>
+            </section>
           )}
 
-            {!loadingUsers && sortedUsers.length > 0 && usersViewMode === 'board' && (
-              <div className="candidate-board" style={{ gridAutoColumns: 'minmax(280px, 280px)' }}>
+          {!loadingUsers && sortedUsers.length > 0 && usersViewMode === 'board' && (
+            <section
+              className="candidate-board user-board-surface"
+              ref={boardRef}
+              onMouseDown={handleBoardMouseDown}
+              onMouseMove={handleBoardMouseMove}
+              onMouseUp={stopBoardDrag}
+              onMouseLeave={stopBoardDrag}
+              onDragOver={(event) => autoScrollBoardWhileDragging(event.clientX)}
+            >
                 {ROLE_OPTIONS.map((roleOption) => {
                   const roleUsers = usersByRole[roleOption]
                   return (
                     <article
                       key={roleOption}
-                      className="candidate-column"
+                      className={`candidate-column candidate-column--${roleClassName(roleOption)}`}
                       data-drop-target={dropRole === roleOption ? 'true' : 'false'}
                       onDragOver={(event) => {
+                        autoScrollBoardWhileDragging(event.clientX)
                         event.preventDefault()
                         setDropRole(roleOption)
                       }}
@@ -525,13 +631,16 @@ function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicy
                         <span>{roleOption}</span>
                         <small>{roleUsers.length}</small>
                       </h3>
-                      <div className="candidate-column__list">
+                      <div className="candidate-column__list job-board__list">
                         {roleUsers.map((user) => (
                           <article
                             key={user.id}
                             className="candidate-card"
                             draggable={isSuperAdmin}
-                            onDragStart={() => setDragUserId(user.id)}
+                            onDragStart={() => {
+                              stopBoardDrag()
+                              setDragUserId(user.id)
+                            }}
                             onDragEnd={() => {
                               setDragUserId(null)
                               setDropRole(null)
@@ -539,9 +648,11 @@ function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicy
                           >
                             <div className="candidate-card__row">
                               <strong>{`${user.firstName} ${user.lastName}`.trim()}</strong>
-                              <span>{user.isActive ? 'Active' : 'Inactive'}</span>
+                              <span>{user.email}</span>
                             </div>
-                            <small>{user.email}</small>
+                            <small>
+                              {user.isActive ? 'Active' : 'Inactive'}
+                            </small>
                             <div className="candidate-card__quick-actions">
                               {getPreviousRole(user.role) && (
                                 <button
@@ -553,7 +664,7 @@ function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicy
                                     if (previousRole) void handleRoleChange(user.id, previousRole)
                                   }}
                                 >
-                                  <span aria-hidden="true">←</span>
+                                  <span className="material-symbols-rounded" aria-hidden="true">arrow_back</span>
                                 </button>
                               )}
                               <button
@@ -590,7 +701,7 @@ function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicy
                                     if (nextRole) void handleRoleChange(user.id, nextRole)
                                   }}
                                 >
-                                  <span aria-hidden="true">→</span>
+                                  <span className="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
                                 </button>
                               )}
                             </div>
@@ -601,10 +712,9 @@ function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicy
                     </article>
                   )
                 })}
-              </div>
-            )}
-          </article>
-        </section>
+            </section>
+          )}
+        </>
       )}
 
       {pageMode === 'create' && (
