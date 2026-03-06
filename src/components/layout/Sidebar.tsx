@@ -4,7 +4,8 @@ type SidebarProps = {
   onCandidatesClick?: () => void
   onInterviewsClick?: () => void
   onUsersClick?: () => void
-  activeNav: 'dashboard' | 'jobs' | 'candidates' | 'interviews' | 'users'
+  onReportsClick?: () => void
+  activeNav: 'dashboard' | 'jobs' | 'candidates' | 'interviews' | 'users' | 'reports'
   logoSrc?: string
   collapsed: boolean
   onToggleCollapse: () => void
@@ -23,6 +24,7 @@ function Sidebar({
   onCandidatesClick,
   onInterviewsClick,
   onUsersClick,
+  onReportsClick,
   activeNav,
   logoSrc,
   collapsed,
@@ -81,7 +83,7 @@ function Sidebar({
             <span className="nav-label">Users</span>
           </button>
         )}
-        <button type="button" className="jm-nav__item">
+        <button type="button" className={`jm-nav__item ${activeNav === 'reports' ? 'is-active' : ''}`} onClick={onReportsClick}>
           <span className="material-symbols-rounded nav-icon">description</span>
           <span className="nav-label">Reports</span>
         </button>

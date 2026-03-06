@@ -10,7 +10,8 @@ type LayoutProps = {
   onShowCandidates: () => void
   onShowInterviews?: () => void
   onShowUsers?: () => void
-  activeNav: 'dashboard' | 'jobs' | 'candidates' | 'interviews' | 'users'
+  onShowReports?: () => void
+  activeNav: 'dashboard' | 'jobs' | 'candidates' | 'interviews' | 'users' | 'reports'
   logoSrc?: string
   role?: string
   canViewDashboard?: boolean
@@ -37,6 +38,7 @@ function Layout({
   onShowCandidates,
   onShowInterviews,
   onShowUsers,
+  onShowReports,
   activeNav,
   logoSrc,
   role,
@@ -66,6 +68,7 @@ function Layout({
         onCandidatesClick={onShowCandidates}
         onInterviewsClick={onShowInterviews}
         onUsersClick={onShowUsers}
+        onReportsClick={onShowReports}
         activeNav={activeNav}
         logoSrc={logoSrc}
         collapsed={sidebarCollapsed}

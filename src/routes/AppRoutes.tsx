@@ -21,6 +21,7 @@ import CreateJobPage from '../pages/jobs/CreateJobPage'
 import EditJobPage from '../pages/jobs/EditJobPage'
 import JobDetailsPage from '../pages/jobs/JobDetailsPage'
 import JobListPage from '../pages/jobs/JobListPage'
+import WeeklyReportPage from '../pages/reports/WeeklyReportPage'
 import UserManagementPage from '../pages/users/UserManagementPage'
 import { apiRequest } from '../services/axiosInstance'
 import { clearTokens, getAccessToken } from '../services/tokenService'
@@ -39,6 +40,7 @@ type JobView =
   | 'candidate-add'
   | 'candidate-details'
   | 'interviews'
+  | 'reports'
   | 'users'
 type AuthPage = 'login' | 'forgot' | 'success'
 
@@ -110,6 +112,7 @@ function parseRouteState(): RouteState {
   if (normalizedPath === '/candidates/add') return { view: 'candidate-add', candidateJobId }
   if (normalizedPath === '/candidates/details') return { view: 'candidate-details', candidateId }
   if (normalizedPath === '/interviews') return { view: 'interviews' }
+  if (normalizedPath === '/reports') return { view: 'reports' }
   if (normalizedPath === '/users') return { view: 'users' }
   return { view: 'dashboard' }
 }
@@ -136,6 +139,7 @@ function buildRoutePath(state: RouteState): string {
   if (state.view === 'candidate-add') pathname = '/candidates/add'
   if (state.view === 'candidate-details') pathname = '/candidates/details'
   if (state.view === 'interviews') pathname = '/interviews'
+  if (state.view === 'reports') pathname = '/reports'
   if (state.view === 'users') pathname = '/users'
 
   return query.length > 0 ? `${pathname}?${query}` : pathname
@@ -403,7 +407,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
   useEffect(() => {
     if (!isAuthenticated) return
 
-    if (view === 'dashboard' || view.startsWith('candidate')) {
+    if (view === 'dashboard' || view === 'reports' || view.startsWith('candidate')) {
       void loadJobs()
       return
     }
@@ -582,7 +586,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
 
   useEffect(() => {
     if (!isAuthenticated) return
-    if (view === 'dashboard' && !permissions.canViewDashboard) {
+    if ((view === 'dashboard' || view === 'reports') && !permissions.canViewDashboard) {
       if (permissions.canViewJobs) navigateTo('list', { replace: true, jobId: null })
       else if (permissions.canViewCandidates) navigateTo('candidate-list', { replace: true, candidateJobId: null, candidateId: null })
       return
@@ -856,6 +860,13 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         }
         navigateTo('interviews')
       }}
+      onShowReports={() => {
+        if (!permissions.canViewDashboard) {
+          showToast('Your role has no access to reports.', 'error')
+          return
+        }
+        navigateTo('reports')
+      }}
       onShowUsers={() => {
         if (!permissions.canManageUsers) {
           showToast('Only Super Admin can access users and roles.', 'error')
@@ -870,6 +881,8 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
             ? 'users'
             : view === 'interviews'
               ? 'interviews'
+              : view === 'reports'
+                ? 'reports'
               : view.startsWith('candidate')
                 ? 'candidates'
                 : 'jobs'
@@ -895,6 +908,9 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
       onClearAllAlerts={() => setAlerts([])}
     >
       {view === 'dashboard' && <DashboardPage jobs={jobs} loading={loading} error={listError} onRetry={() => void loadJobs()} />}
+      {view === 'reports' && (
+        <WeeklyReportPage jobs={jobs} jobsLoading={loading} jobsError={listError} onRetryJobs={() => void loadJobs()} />
+      )}
       {view === 'list' && (
         <JobListPage
           jobs={jobs}
