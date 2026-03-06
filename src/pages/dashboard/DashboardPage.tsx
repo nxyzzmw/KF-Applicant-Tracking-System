@@ -27,6 +27,8 @@ const PIPELINE_STAGE_ORDER = [
 ] as const
  
 const OUTCOME_COLORS = ['#16a34a', '#dc2626', '#2563eb']
+const PIPELINE_STAGE_COLORS = ['#2563eb', '#06b6d4', '#14b8a6', '#f59e0b', '#f97316', '#8b5cf6', '#22c55e', '#ef4444']
+const DEPARTMENT_COLORS = ['#2563eb', '#14b8a6', '#f59e0b', '#8b5cf6', '#ef4444', '#22c55e']
  
 function formatShortDate(value?: string): string {
   return formatDisplayDateIN(value, 'No target date')
@@ -614,17 +616,25 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 <span className="material-symbols-rounded">domain</span>
                 <span>Department Workload</span>
               </h3>
-              <ul className="overview-list overview-list--compact">
-                {overview.departments.length === 0 && <li className="overview-list__empty">No department data yet.</li>}
-                {overview.departments.map((item) => (
-                  <li key={item.department}>
-                    <span>{item.department}</span>
-                    <span>
-                      {item.openings} openings across {item.roles} roles
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              {overview.departments.length === 0 && <p className="overview-note">No department data yet.</p>}
+              {overview.departments.length > 0 && (
+                <div className="dashboard-chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={overview.departments} layout="vertical" margin={{ top: 8, right: 32, bottom: 28, left: 12 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                      <XAxis type="number" allowDecimals={false} tickMargin={8} label={{ value: 'Open Roles', position: 'bottom', offset: 8 }} />
+                      <YAxis type="category" dataKey="department" width={96} tick={{ fontSize: 12 }} />
+                      <Tooltip formatter={(value) => [`${asChartNumber(value)}`, 'Open Roles']} />
+                      <Bar dataKey="openings" name="Open Roles" radius={[0, 8, 8, 0]} barSize={22}>
+                        {overview.departments.map((item, index) => (
+                          <Cell key={item.department} fill={DEPARTMENT_COLORS[index % DEPARTMENT_COLORS.length]} />
+                        ))}
+                        <LabelList dataKey="openings" position="right" />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </article>
           </section>
  
@@ -672,24 +682,6 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                   </p>
                 </>
               )}
-            </article>
- 
-            <article className="overview-card">
-              <h3>
-                <span className="material-symbols-rounded">stacked_bar_chart</span>
-                <span>Candidate Stage Distribution</span>
-              </h3>
-              <ul className="overview-list overview-list--compact">
-                {!candidatesLoading && candidateOverview.topStages.length === 0 && (
-                  <li className="overview-list__empty">No candidate stage data yet.</li>
-                )}
-                {candidateOverview.topStages.map((item) => (
-                  <li key={item.status}>
-                    <span>{CANDIDATE_STATUS_LABELS[item.status]}</span>
-                    <span>{item.count} candidates</span>
-                  </li>
-                ))}
-              </ul>
             </article>
  
             <article className="overview-card">
@@ -745,17 +737,31 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
               {!chartLoading && !chartError && funnelChartData.length > 0 && (
                 <div className="dashboard-chart">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={funnelChartData} layout="vertical" margin={{ top: 8, right: 24, bottom: 8, left: 12 }}>
+                    <BarChart data={funnelChartData} layout="horizontal" margin={{ top: 16, right: 24, bottom: 48, left: 52 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} />
-                      <YAxis type="category" dataKey="stage" width={126} tick={{ fontSize: 12 }} />
+                      <XAxis
+                        type="category"
+                        dataKey="stage"
+                        interval={0}
+                        tick={{ fontSize: 10 }}
+                        height={56}
+                        label={{ value: 'Hiring Stages', position: 'insideBottom', offset: -8 }}
+                      />
+                      <YAxis
+                        type="number"
+                        allowDecimals={false}
+                        tick={{ fontSize: 12 }}
+                        label={{ value: 'Number of Candidates', angle: -90, position: 'left', offset: 10, style: { textAnchor: 'middle' } }}
+                      />
                       <Tooltip
                         formatter={(value) => [`${asChartNumber(value)}`, 'Candidates']}
                         labelFormatter={(label) => `Stage: ${label}`}
                       />
-                      <Legend />
-                      <Bar dataKey="count" name="Candidates" fill="#2563eb" radius={[0, 8, 8, 0]} barSize={22}>
-                        <LabelList dataKey="count" position="right" />
+                      <Bar dataKey="count" name="Candidates" radius={[8, 8, 0, 0]} barSize={28}>
+                        {funnelChartData.map((item, index) => (
+                          <Cell key={item.stage} fill={PIPELINE_STAGE_COLORS[index % PIPELINE_STAGE_COLORS.length]} />
+                        ))}
+                        <LabelList dataKey="count" position="top" />
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
