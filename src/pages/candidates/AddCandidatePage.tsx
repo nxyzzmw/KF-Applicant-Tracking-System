@@ -85,9 +85,12 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
   const [resumeFile, setResumeFile] = useState<File | null>(null)
   const [parsedPreview, setParsedPreview] = useState<{ name: string; email: string; contact: string; skills: string } | null>(null)
   const [parserMessage, setParserMessage] = useState<string | null>(null)
+  const [parserMissingFields, setParserMissingFields] = useState<string[]>([])
+  const [isDropActive, setIsDropActive] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
+  const [resumePreviewUrl, setResumePreviewUrl] = useState<string | null>(null)
 
   const jobOptions = useMemo(
     () =>
@@ -102,6 +105,16 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
     setForm((prev) => ({ ...prev, jobID: prev.jobID || initialJobId }))
   }, [initialJobId])
 
+  useEffect(() => {
+    if (!resumeFile) {
+      setResumePreviewUrl(null)
+      return
+    }
+    const nextUrl = URL.createObjectURL(resumeFile)
+    setResumePreviewUrl(nextUrl)
+    return () => URL.revokeObjectURL(nextUrl)
+  }, [resumeFile])
+
   function updateField<K extends keyof CandidateFormValues>(key: K, value: CandidateFormValues[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
     setFieldErrors((prev) => ({ ...prev, [key]: undefined }))
@@ -114,9 +127,11 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
     if (!isSupported) {
       setFieldErrors((prev) => ({ ...prev, resume: 'Only Word and PDF resumes are supported.' }))
       setParserMessage('Resume parser supports only PDF or Word files.')
+      setParserMissingFields([])
       return
     }
     setFieldErrors((prev) => ({ ...prev, resume: undefined }))
+    setParserMissingFields([])
 
     const ext = fileName.slice(fileName.lastIndexOf('.'))
     let extractedText = ''
@@ -127,7 +142,8 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
     } else if (ext === '.docx' || ext === '.doc') {
       // DOC/DOCX binary parsing in browser is unreliable without parser libs.
       setParsedPreview(null)
-      setParserMessage('Resume uploaded. Auto-fill for DOC/DOCX is limited in browser; please verify fields manually.')
+      setParserMissingFields(['Name', 'Email', 'Contact', 'Skills'])
+      setParserMessage('Resume uploaded. Auto-fill for DOC/DOCX is limited in browser. Fill missing fields manually.')
       return
     } else {
       extractedText = normalizeWhitespace(await file.text())
@@ -135,6 +151,7 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
 
     if (!extractedText) {
       setParsedPreview(null)
+      setParserMissingFields(['Name', 'Email', 'Contact', 'Skills'])
       setParserMessage('Could not extract resume text reliably. Please fill fields manually.')
       return
     }
@@ -149,11 +166,22 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
     const hasUsefulData = Boolean(email || phone || likelyName || detectedSkills)
     if (!hasUsefulData) {
       setParsedPreview(null)
+      setParserMissingFields(['Name', 'Email', 'Contact', 'Skills'])
       setParserMessage('Resume uploaded, but auto-detection confidence is low. Please enter details manually.')
       return
     }
 
-    setParserMessage('Resume parsed. Review detected fields before saving.')
+    const missingFields: string[] = []
+    if (!likelyName.trim()) missingFields.push('Name')
+    if (!email.trim()) missingFields.push('Email')
+    if (!phone.trim()) missingFields.push('Contact')
+    if (!detectedSkills.trim()) missingFields.push('Skills')
+    setParserMissingFields(missingFields)
+    setParserMessage(
+      missingFields.length > 0
+        ? `Resume parsed partially. Fill missing fields manually: ${missingFields.join(', ')}.`
+        : 'Resume parsed successfully. Review detected fields before saving.',
+    )
 
     const parsed = {
       name: likelyName,
@@ -186,11 +214,26 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
     setFieldErrors((prev) => ({ ...prev, resume: undefined }))
     if (!file) {
       setParserMessage(null)
+      setParserMissingFields([])
       return
     }
     setEntryMode('manual')
     setParsedPreview(null)
+    setParserMissingFields([])
     setParserMessage('Resume attached. It will be uploaded when you save candidate.')
+  }
+
+  function handleResumeFileSelect(file: File | null) {
+    setResumeFile(file)
+    if (!file) {
+      setFieldErrors((prev) => ({ ...prev, resume: 'Resume file is required in parser mode' }))
+      setParsedPreview(null)
+      setParserMissingFields([])
+      setParserMessage(null)
+      return
+    }
+    setEntryMode('resume')
+    void parseResume(file)
   }
 
   function validate(values: CandidateFormValues): FieldErrors {
@@ -214,7 +257,9 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
     if (!values.noticePeriod.trim()) next.noticePeriod = 'Notice period is required'
     if (values.experience.trim() && Number(values.experience) < 0) next.experience = 'Experience cannot be negative'
     if (values.noticePeriod.trim() && Number(values.noticePeriod) < 0) next.noticePeriod = 'Notice period cannot be negative'
-    if (entryMode === 'resume' && !resumeFile) next.resume = 'Resume file is required in resume mode'
+    if (!resumeFile) {
+      next.resume = entryMode === 'resume' ? 'Resume file is required in parser mode' : 'Resume file is required in manual mode'
+    }
     return next
   }
 
@@ -235,6 +280,7 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
       if (resumeFile) {
         try {
           await uploadCandidateResume(created.id, resumeFile)
+          showToast('Resume uploaded successfully.', 'success')
         } catch {
           postCreateWarnings.push('Resume upload failed.')
         }
@@ -266,32 +312,45 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
       {error && <p className="panel-message panel-message--error">{error}</p>}
 
       <section className={`candidate-quick-apply ${entryMode === 'resume' ? 'is-active' : ''}`}>
-        <input
-          id="candidate-resume-upload"
-          type="file"
-          accept=".pdf,.doc,.docx"
-          className="candidate-quick-apply__input"
-          onChange={(event) => {
-            const file = event.target.files?.[0] ?? null
-            setResumeFile(file)
-            if (!file) {
-              setFieldErrors((prev) => ({ ...prev, resume: entryMode === 'resume' ? 'Resume file is required in resume mode' : undefined }))
-              return
-            }
-            setEntryMode('resume')
-            void parseResume(file)
-          }}
-        />
+        <input id="candidate-resume-upload" type="file" accept=".pdf,.doc,.docx" className="candidate-quick-apply__input" onChange={(event) => handleResumeFileSelect(event.target.files?.[0] ?? null)} />
         <label htmlFor="candidate-resume-upload" className="candidate-quick-apply__icon" aria-label="Upload resume">
           <span className="material-symbols-rounded">cloud_upload</span>
         </label>
         <h3>Quick Apply with Resume</h3>
-        <p>Drag and drop a PDF or Word file here. We auto-fill available candidate details.</p>
-        <small>Supports PDF, DOC, DOCX up to 10MB</small>
+        <p>Drag and drop your PDF or Word file here to auto-populate candidate profile information.</p>
+        <div
+          className={`candidate-quick-apply__dropzone${isDropActive ? ' is-active' : ''}`}
+          onDragOver={(event) => {
+            event.preventDefault()
+            setIsDropActive(true)
+          }}
+          onDragLeave={() => setIsDropActive(false)}
+          onDrop={(event) => {
+            event.preventDefault()
+            setIsDropActive(false)
+            const file = event.dataTransfer.files?.[0] ?? null
+            handleResumeFileSelect(file)
+          }}
+        >
+          <label htmlFor="candidate-resume-upload" className="candidate-quick-apply__browse">
+            <span className="material-symbols-rounded">attach_file</span>
+            <span>Browse Files</span>
+          </label>
+          <small>PDF</small>
+          <small>DOCX</small>
+          <small>DOC</small>
+        </div>
         {fieldErrors.resume && <small className="field-error">{fieldErrors.resume}</small>}
         {resumeFile && (
           <p className="overview-note">
             Selected: <strong>{resumeFile.name}</strong>
+          </p>
+        )}
+        {resumeFile && resumePreviewUrl && (
+          <p className="overview-note">
+            <a href={resumePreviewUrl} target="_blank" rel="noreferrer" className="table-action">
+              Preview Selected Resume
+            </a>
           </p>
         )}
         {parsedPreview && (
@@ -315,6 +374,9 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
           </ul>
         )}
         {parserMessage && <small className="editor-muted">{parserMessage}</small>}
+        {parserMissingFields.length > 0 && (
+          <small className="field-error">Please fill manually: {parserMissingFields.join(', ')}</small>
+        )}
       </section>
 
       <div className="candidate-quick-divider" aria-hidden="true">
@@ -452,9 +514,9 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
               <span className="material-symbols-rounded">upload_file</span> Resume Upload
               <small>Optional</small>
             </h3>
-            <p className="editor-muted">Use this in manual entry mode to attach resume only, without auto parsing.</p>
-            <div className="candidate-resume-upload-card__drop">
-              <label htmlFor="candidate-manual-resume-upload" className="candidate-resume-upload-card__trigger">
+            <p className="editor-muted">Use this in manual mode to attach resume only. In parser mode this section is disabled.</p>
+            <div className={`candidate-resume-upload-card__drop${entryMode === 'resume' ? ' is-disabled' : ''}`}>
+              <label htmlFor="candidate-manual-resume-upload" className={`candidate-resume-upload-card__trigger${entryMode === 'resume' ? ' is-disabled' : ''}`}>
                 <span className="material-symbols-rounded" aria-hidden="true">cloud_upload</span>
                 <span>Upload Resume</span>
               </label>
@@ -463,6 +525,7 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
                 type="file"
                 accept=".pdf,.doc,.docx"
                 className="candidate-resume-upload-card__input"
+                disabled={entryMode === 'resume'}
                 onChange={(event) => handleManualResumeSelect(event.target.files?.[0] ?? null)}
               />
               <small>Accepted: PDF, DOC, DOCX</small>

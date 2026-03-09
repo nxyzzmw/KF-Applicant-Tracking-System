@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { SkeletonRows } from '../../components/common/Loader'
 import { getCandidates } from '../../features/candidates/candidateAPI'
 import { CANDIDATE_STATUS_LABELS, type CandidateRecord, type CandidateStatus } from '../../features/candidates/candidateTypes'
 import { getDashboardFunnel, getDashboardWeeklyStats } from '../../features/dashboard/dashboardAPI'
@@ -489,7 +490,24 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
         </div>
       </section>
  
-      {loading && <p className="panel-message">Loading dashboard...</p>}
+      {loading && (
+        <>
+          <section className="stats-grid">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <article key={`stats-skeleton-${index}`}>
+                <SkeletonRows rows={3} />
+              </article>
+            ))}
+          </section>
+          <section className="overview-grid">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <article key={`overview-skeleton-${index}`} className="overview-card">
+                <SkeletonRows rows={6} />
+              </article>
+            ))}
+          </section>
+        </>
+      )}
       {error && (
         <p className="panel-message panel-message--error">
           {error} <button onClick={onRetry}>Retry</button>
@@ -650,7 +668,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 <span className="material-symbols-rounded">group</span>
                 <span>Candidate Management Overview</span>
               </h3>
-              {candidatesLoading && <p className="overview-note">Loading candidate overview...</p>}
+              {candidatesLoading && <SkeletonRows rows={4} />}
               {candidatesError && (
                 <p className="overview-note" style={{ color: 'var(--error)' }}>
                   {candidatesError} <button onClick={() => void loadCandidateOverview()}>Retry</button>
@@ -727,7 +745,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 <span className="material-symbols-rounded">bar_chart</span>
                 <span>Hiring Pipeline (Stage Bar Chart)</span>
               </h3>
-              {chartLoading && <p className="overview-note">Loading hiring funnel...</p>}
+              {chartLoading && <SkeletonRows rows={5} />}
               {chartError && (
                 <p className="overview-note" style={{ color: 'var(--error)' }}>
                   {chartError} <button onClick={() => void loadDashboardCharts()}>Retry</button>
@@ -774,7 +792,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 <span className="material-symbols-rounded">pie_chart</span>
                 <span>Hiring Outcome</span>
               </h3>
-              {chartLoading && <p className="overview-note">Loading hiring outcome...</p>}
+              {chartLoading && <SkeletonRows rows={4} />}
               {chartError && (
                 <p className="overview-note" style={{ color: 'var(--error)' }}>
                   {chartError} <button onClick={() => void loadDashboardCharts()}>Retry</button>
@@ -822,7 +840,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 <span className="material-symbols-rounded">monitoring</span>
                 <span>Weekly Hiring Trend</span>
               </h3>
-              {chartLoading && <p className="overview-note">Loading weekly trend...</p>}
+              {chartLoading && <SkeletonRows rows={5} />}
               {chartError && (
                 <p className="overview-note" style={{ color: 'var(--error)' }}>
                   {chartError} <button onClick={() => void loadDashboardCharts()}>Retry</button>
@@ -854,7 +872,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 <span className="material-symbols-rounded">event_upcoming</span>
                 <span>Upcoming Interviews</span>
               </h3>
-              {candidatesLoading && <p className="overview-note">Loading upcoming interviews...</p>}
+              {candidatesLoading && <SkeletonRows rows={4} />}
               {candidatesError && <p className="overview-note" style={{ color: 'var(--error)' }}>{candidatesError}</p>}
               {!candidatesLoading && !candidatesError && (
                 <ul className="overview-list">
@@ -881,7 +899,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 <span className="material-symbols-rounded">history</span>
                 <span>Recent Activities</span>
               </h3>
-              {candidatesLoading && <p className="overview-note">Loading recent activities...</p>}
+              {candidatesLoading && <SkeletonRows rows={4} />}
               {candidatesError && <p className="overview-note" style={{ color: 'var(--error)' }}>{candidatesError}</p>}
               {!candidatesLoading && !candidatesError && (
                 <ul className="overview-list">

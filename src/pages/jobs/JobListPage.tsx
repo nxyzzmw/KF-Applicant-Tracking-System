@@ -463,7 +463,6 @@ function JobListPage({
       {viewMode === 'list' && <section className="table-panel">
         {loading && (
           <div style={{ padding: '0.8rem' }}>
-            <p className="panel-message">Loading jobs...</p>
             <div style={{ padding: '0.4rem 0' }}>
               <SkeletonRows rows={8} />
             </div>

@@ -72,6 +72,7 @@ function CandidateListPage({
   })
   const [scheduleSaving, setScheduleSaving] = useState(false)
   const [interviewers, setInterviewers] = useState<ManagedUser[]>([])
+  const [activeUsers, setActiveUsers] = useState<ManagedUser[]>([])
   const loadRequestIdRef = useRef(0)
   const boardRef = useRef<HTMLElement | null>(null)
   const boardDragRef = useRef<{ active: boolean; startX: number; startScrollLeft: number }>({
@@ -129,8 +130,11 @@ function CandidateListPage({
     async function loadInterviewers() {
       try {
         const users = await getUsers()
-        setInterviewers(users.filter((user) => user.role === 'Interview Panel' && user.isActive))
+        const active = users.filter((user) => user.isActive)
+        setActiveUsers(active)
+        setInterviewers(active.filter((user) => user.role === 'Interview Panel' || user.role === 'HR Recruiter'))
       } catch {
+        setActiveUsers([])
         setInterviewers([])
       }
     }
@@ -186,7 +190,47 @@ function CandidateListPage({
     return fallback
   }
 
+  function getLatestInterviewForStage(candidate: CandidateRecord, stage: InterviewStage): CandidateRecord['interviews'][number] | null {
+    const byStage = (candidate.interviews ?? []).filter((interview) => interview.stage === stage)
+    if (byStage.length === 0) return null
+    return [...byStage].sort((a, b) => {
+      const aTime = new Date(a.completedAt || a.updatedAt || a.scheduledAt || a.createdAt || 0).getTime()
+      const bTime = new Date(b.completedAt || b.updatedAt || b.scheduledAt || b.createdAt || 0).getTime()
+      return bTime - aTime
+    })[0]
+  }
+
+  function validateStageTransition(candidate: CandidateRecord, nextStatus: CandidateStatus): string | null {
+    if (nextStatus === 'Technical Interview 2') {
+      const interview = getLatestInterviewForStage(candidate, 'Technical Interview 1')
+      if (!interview) return 'Schedule Technical Interview 1 before moving to Technical Interview 2.'
+      const hasResult = Boolean(interview.result && interview.result !== 'Pending')
+      const hasFeedback = Boolean((interview.feedback || '').trim())
+      if (!hasResult || !hasFeedback) return 'Add result and feedback for Technical Interview 1 before moving to Technical Interview 2.'
+    }
+    if (nextStatus === 'HR Interview') {
+      const interview = getLatestInterviewForStage(candidate, 'Technical Interview 2')
+      if (!interview) return 'Schedule Technical Interview 2 before moving to HR Interview.'
+      const hasResult = Boolean(interview.result && interview.result !== 'Pending')
+      const hasFeedback = Boolean((interview.feedback || '').trim())
+      if (!hasResult || !hasFeedback) return 'Add result and feedback for Technical Interview 2 before moving to HR Interview.'
+    }
+    return null
+  }
+
   async function handleStatusDrop(candidateId: string, status: CandidateStatus): Promise<CandidateRecord | null> {
+    const existing = candidates.find((candidate) => candidate.id === candidateId)
+    if (!existing) {
+      showToast('Candidate not found for status update.', 'error')
+      return null
+    }
+    const transitionError = validateStageTransition(existing, status)
+    if (transitionError) {
+      setError(transitionError)
+      showToast(transitionError, 'error')
+      return null
+    }
+
     try {
       const updated = await updateCandidateStatus(candidateId, status)
       setCandidates((prev) => prev.map((candidate) => (candidate.id === candidateId ? updated : candidate)))
@@ -258,6 +302,37 @@ function CandidateListPage({
 
   function getCandidateRoleLabel(candidate: CandidateRecord): string {
     return candidate.role || candidate.jobTitle || jobMap.get(candidate.jobID) || 'Role not mapped'
+  }
+
+  const userById = useMemo(() => {
+    return activeUsers.reduce<Record<string, ManagedUser>>((acc, user) => {
+      acc[user.id] = user
+      return acc
+    }, {})
+  }, [activeUsers])
+
+  function getCandidateAssigneeLabel(candidate: CandidateRecord): string {
+    if (candidate.recruiter?.trim()) return candidate.recruiter.trim()
+    if (candidate.referal?.trim()) return candidate.referal.trim()
+
+    const latestAssignedInterview = [...(candidate.interviews ?? [])]
+      .sort((a, b) => {
+        const aTime = new Date(a.scheduledAt || a.updatedAt || a.createdAt || 0).getTime()
+        const bTime = new Date(b.scheduledAt || b.updatedAt || b.createdAt || 0).getTime()
+        return bTime - aTime
+      })
+      .find((interview) => interview.interviewer?.id || interview.interviewer?.name || interview.interviewer?.email)
+
+    if (!latestAssignedInterview) return 'Unassigned'
+
+    const interviewerId = latestAssignedInterview.interviewer?.id || ''
+    const fromDirectory = interviewerId ? userById[interviewerId] : undefined
+    if (fromDirectory) {
+      const fullName = `${fromDirectory.firstName} ${fromDirectory.lastName}`.trim()
+      return fullName || fromDirectory.email || 'Unassigned'
+    }
+
+    return latestAssignedInterview.interviewer?.name || latestAssignedInterview.interviewer?.email || 'Unassigned'
   }
 
   function getStageClassName(status: CandidateStatus): string {
@@ -487,7 +562,6 @@ function CandidateListPage({
 
       {loading && (
         <section className="table-panel">
-          <p className="panel-message">Loading candidates...</p>
           <div style={{ padding: '0.8rem' }}>
             <SkeletonRows rows={8} />
           </div>
@@ -545,7 +619,7 @@ function CandidateListPage({
                           {CANDIDATE_STATUS_LABELS[candidate.status]}
                         </span>
                       </td>
-                      <td>{candidate.recruiter || candidate.referal || 'Unassigned'}</td>
+                      <td>{getCandidateAssigneeLabel(candidate)}</td>
                       <td style={{ textAlign: 'right' }}>
                         <div className="actions-cell">
                           <select

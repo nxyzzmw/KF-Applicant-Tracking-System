@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { SkeletonRows } from '../../components/common/Loader'
 import { useToast } from '../../components/common/ToastProvider'
 import { getRolePermissions, ROLE_OPTIONS, type AppRole, type RbacPolicy, type RolePermissions } from '../../features/auth/roleAccess'
 import { getRbacPolicy, updateRbacPolicy } from '../../features/auth/rbacAPI'
@@ -526,7 +527,13 @@ function UserManagementPage({ role, searchTerm, onSearchTermChange, onRbacPolicy
             </button>
           </section>
 
-          {loadingUsers && <p className="overview-note">Loading users...</p>}
+          {loadingUsers && (
+            <section className="table-panel">
+              <div style={{ padding: '0.8rem' }}>
+                <SkeletonRows rows={8} />
+              </div>
+            </section>
+          )}
           {usersError && <p className="panel-message panel-message--error">{usersError}</p>}
           {!loadingUsers && !usersError && sortedUsers.length === 0 && <p className="overview-note">No users available.</p>}
 

@@ -49,7 +49,6 @@ type AuthPage = 'login' | 'forgot' | 'success'
 
 type AppRoutesProps = {
   onInitialDataReady?: () => void
-  onNavigationLoadingChange?: (loading: boolean) => void
 }
 
 type UserProfileResponse = {
@@ -758,7 +757,7 @@ async function loadSocketIoClientScript(path = SOCKET_PATH): Promise<void> {
   })
 }
 
-function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesProps) {
+function AppRoutes({ onInitialDataReady }: AppRoutesProps) {
   const { showToast } = useToast()
   const { confirm } = useConfirm()
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAccessToken()))
@@ -854,7 +853,6 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         candidateJobId?: string | null
       },
     ) => {
-      onNavigationLoadingChange?.(true)
       setActionError(null)
       if (options?.jobId !== undefined) setSelectedJobId(options.jobId)
       if (options?.candidateId !== undefined) setSelectedCandidateId(options.candidateId)
@@ -867,9 +865,29 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         candidateJobId: options?.candidateJobId !== undefined ? options.candidateJobId : selectedCandidateJobId,
       })
       window.history[options?.replace ? 'replaceState' : 'pushState']({}, '', path)
-      window.setTimeout(() => onNavigationLoadingChange?.(false), 520)
     },
-    [onNavigationLoadingChange, selectedCandidateId, selectedCandidateJobId, selectedJobId],
+    [selectedCandidateId, selectedCandidateJobId, selectedJobId],
+  )
+
+  const navigateBack = useCallback(
+    (
+      fallbackView: JobView,
+      fallbackOptions?: {
+        jobId?: string | null
+        candidateId?: string | null
+        candidateJobId?: string | null
+      },
+    ) => {
+      const before = `${window.location.pathname}${window.location.search}`
+      window.history.back()
+      window.setTimeout(() => {
+        const after = `${window.location.pathname}${window.location.search}`
+        if (after === before) {
+          navigateTo(fallbackView, { ...fallbackOptions, replace: true })
+        }
+      }, 120)
+    },
+    [navigateTo],
   )
 
   const syncFromLocation = useCallback(() => {
@@ -1907,14 +1925,14 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         />
       )}
       {view === 'create' && permissions.canCreateJob && (
-        <CreateJobPage saving={saving} error={actionError} onCancel={() => navigateTo('list', { jobId: null })} onSubmit={handleCreate} />
+        <CreateJobPage saving={saving} error={actionError} onCancel={() => navigateBack('list', { jobId: null })} onSubmit={handleCreate} />
       )}
       {view === 'details' && (
         <JobDetailsPage
           job={selectedJob ?? (selectedJobId ? jobs.find((job) => job.id === selectedJobId) ?? null : null)}
           loading={detailsLoading}
           error={actionError}
-          onBack={() => navigateTo('list', { jobId: null })}
+          onBack={() => navigateBack('list', { jobId: null })}
           onEdit={() => navigateTo('edit', { jobId: selectedJobId })}
           onManageCandidates={openCandidatesForJob}
           canEditJob={permissions.canEditJob && !isJobExpired(selectedJob?.targetClosureDate)}
@@ -1927,7 +1945,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
           loading={detailsLoading}
           saving={saving}
           error={actionError}
-          onBack={() => navigateTo('details', { jobId: selectedJobId })}
+          onBack={() => navigateBack('details', { jobId: selectedJobId })}
           onSubmit={handleUpdate}
         />
       )}
@@ -1963,7 +1981,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         <AddCandidatePage
           jobs={jobs}
           initialJobId={selectedCandidateJobId}
-          onBack={() => navigateTo('candidate-list', { candidateJobId: selectedCandidateJobId })}
+          onBack={() => navigateBack('candidate-list', { candidateJobId: selectedCandidateJobId })}
           onCreated={(candidateId) => {
             void loadJobs()
             navigateTo('candidate-details', { candidateId })
@@ -1974,7 +1992,7 @@ function AppRoutes({ onInitialDataReady, onNavigationLoadingChange }: AppRoutesP
         <CandidateDetailPage
           candidateId={selectedCandidateId}
           jobs={jobs}
-          onBack={() => navigateTo('candidate-list', { candidateJobId: selectedCandidateJobId })}
+          onBack={() => navigateBack('candidate-list', { candidateJobId: selectedCandidateJobId })}
           canEdit={permissions.canEditCandidate}
           canManageStage={permissions.canManageCandidateStage}
           onInterviewAlert={pushAlert}
