@@ -79,6 +79,7 @@ function normalizeJob(apiJob: JobApiRecord): JobRecord {
     agingDays,
     candidatesApplied,
     createdAt: apiJob.createdAt,
+    updatedAt: apiJob.updatedAt ?? apiJob.updatedOn ?? apiJob.modifiedAt ?? apiJob.lastUpdatedAt,
   }
 }
 

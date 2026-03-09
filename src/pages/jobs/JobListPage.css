@@ -1132,11 +1132,12 @@ tbody td span {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.8rem;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 1rem;
 }
 
 .stats-grid article {
+  width: 100%;
   padding: 1rem;
   min-height: 146px;
   display: flex;
@@ -1277,6 +1278,18 @@ tbody td span {
 
 .overview-list--compact li span:last-child {
   color: var(--text-muted-2);
+}
+
+.recruiter-workload-card {
+  height: 260px;
+}
+
+.recruiter-workload-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  padding-right: 0.2rem;
 }
 
 .candidate-interview-card {
@@ -1885,6 +1898,65 @@ tbody td span {
   width: 100%;
   min-height: 320px;
   margin-top: 0.25rem;
+}
+
+.dashboard-trend-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-trend-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.dashboard-trend-tabs button {
+  border: 0;
+  border-radius: 999px;
+  box-shadow: none;
+  background: transparent;
+  color: var(--text-muted-2);
+  padding: 0.35rem 0.8rem;
+}
+
+.dashboard-trend-tabs button.is-active {
+  color: var(--text-default);
+  background: rgba(37, 99, 235, 0.16);
+}
+
+.dashboard-trend-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.dashboard-trend-nav button {
+  box-shadow: none;
+  border: 1px solid var(--border-default);
+  background: var(--surface);
+  color: var(--text-default);
+  padding: 0.35rem 0.7rem;
+}
+
+.dashboard-trend-nav button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dashboard-trend-nav span {
+  font-size: 0.85rem;
+  color: var(--text-muted-2);
+  text-align: center;
 }
 
 .dashboard-bar-list {
@@ -3177,10 +3249,6 @@ textarea {
     grid-template-columns: 1fr 1fr;
   }
 
-  .stats-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .overview-grid {
     grid-template-columns: 1fr;
   }
@@ -3362,10 +3430,6 @@ textarea {
   }
 
   .reports-filters-panel {
-    grid-template-columns: 1fr;
-  }
-
-  .stats-grid {
     grid-template-columns: 1fr;
   }
 
