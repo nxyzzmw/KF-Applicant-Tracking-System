@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { SkeletonRows } from '../../components/common/Loader'
 import { getCandidates } from '../../features/candidates/candidateAPI'
 import type { CandidateRecord } from '../../features/candidates/candidateTypes'
 import type { JobRecord } from '../../features/jobs/jobTypes'
@@ -53,7 +54,15 @@ function JobDetailsPage({
 
   const candidatePreview = useMemo(() => candidates.slice(0, 5), [candidates])
 
-  if (loading) return <p className="panel-message">Loading job details...</p>
+  if (loading) {
+    return (
+      <section className="table-panel">
+        <div style={{ padding: '0.9rem' }}>
+          <SkeletonRows rows={8} />
+        </div>
+      </section>
+    )
+  }
   if (error) return <p className="panel-message panel-message--error">{error}</p>
   if (!job) return <p className="panel-message panel-message--error">Job not found.</p>
 
@@ -106,7 +115,11 @@ function JobDetailsPage({
             </li>
           </ul>
           <h4 style={{ margin: '0.75rem 0 0.35rem' }}>Candidates Applied (Live Sync)</h4>
-          {candidatesLoading && <p className="overview-note">Loading candidates...</p>}
+          {candidatesLoading && (
+            <div style={{ padding: '0.35rem 0 0.2rem' }}>
+              <SkeletonRows rows={4} />
+            </div>
+          )}
           {candidatesError && (
             <p className="panel-message panel-message--error">
               {candidatesError}{' '}

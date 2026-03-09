@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { SkeletonRows } from '../../components/common/Loader'
 import {
   addInterviewToCandidate,
   getCandidateInterviews,
@@ -207,7 +208,7 @@ function CandidateDetailPage({
     async function loadInterviewers() {
       try {
         const users = await getUsers()
-        setInterviewers(users.filter((user) => user.role === 'Interview Panel' && user.isActive))
+        setInterviewers(users.filter((user) => user.isActive && (user.role === 'Interview Panel' || user.role === 'HR Recruiter')))
       } catch {
         setInterviewers([])
       }
@@ -215,7 +216,15 @@ function CandidateDetailPage({
     void loadInterviewers()
   }, [])
 
-  if (loading) return <p className="panel-message">Loading candidate details...</p>
+  if (loading) {
+    return (
+      <section className="table-panel">
+        <div style={{ padding: '0.9rem' }}>
+          <SkeletonRows rows={10} />
+        </div>
+      </section>
+    )
+  }
   if (error) return <p className="panel-message panel-message--error">{error} <button onClick={() => void loadCandidate()}>Retry</button></p>
   if (!candidate) return <p className="panel-message panel-message--error">Candidate not found.</p>
 
@@ -551,7 +560,11 @@ function CandidateDetailPage({
               <span className="material-symbols-rounded">event</span>
               <span>Interview Schedule</span>
             </h3>
-            {interviewsLoading && <p className="overview-note">Loading interviews...</p>}
+            {interviewsLoading && (
+              <div style={{ padding: '0.35rem 0 0.2rem' }}>
+                <SkeletonRows rows={4} />
+              </div>
+            )}
             <div className="field-row">
               <div className="field">
                 <label>Stage</label>

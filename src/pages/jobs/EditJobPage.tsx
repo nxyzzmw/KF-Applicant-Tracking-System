@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { SkeletonRows } from '../../components/common/Loader'
 import type { JobFormValues, JobRecord } from '../../features/jobs/jobTypes'
 import { toDateInputValue } from '../../utils/dateUtils'
 
@@ -54,7 +55,15 @@ function EditJobPage({ job, loading, saving, error, onBack, onSubmit }: EditJobP
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev))
   }
 
-  if (loading || !form) return <p className="panel-message">Loading job details...</p>
+  if (loading || !form) {
+    return (
+      <section className="table-panel">
+        <div style={{ padding: '0.9rem' }}>
+          <SkeletonRows rows={10} />
+        </div>
+      </section>
+    )
+  }
   if (!job) return <p className="panel-message panel-message--error">Job not found.</p>
 
   const selectedSalaryRange = SALARY_OPTIONS.find((option) => option.min === form.salaryMin && option.max === form.salaryMax)?.value ?? ''

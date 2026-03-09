@@ -1,34 +1,32 @@
 import { useEffect, useState } from 'react'
 import './App.css'
-import LoadingScreen from './pages/loading/LoadingScreen'
 import './pages/jobs/JobListPage.css'
 import AppRoutes from './routes/AppRoutes'
 import './components/common/common.css'
 import { ToastProvider } from './components/common/ToastProvider'
 import { ConfirmProvider } from './components/common/ConfirmProvider'
+import { Loader } from './components/common/Loader'
 
 function App() {
   const [bootMinimumElapsed, setBootMinimumElapsed] = useState(false)
   const [bootDataReady, setBootDataReady] = useState(false)
-  const [bootProgressDone, setBootProgressDone] = useState(false)
-  const [navigationLoading, setNavigationLoading] = useState(false)
 
   useEffect(() => {
     const timer = window.setTimeout(() => setBootMinimumElapsed(true), 700)
     return () => window.clearTimeout(timer)
   }, [])
 
-  const showBootLoader = !bootMinimumElapsed || !bootDataReady || !bootProgressDone
-  const showLoader = showBootLoader || navigationLoading
+  const showBootLoader = !bootMinimumElapsed || !bootDataReady
 
   return (
     <ToastProvider>
       <ConfirmProvider>
-        <AppRoutes
-          onInitialDataReady={() => setBootDataReady(true)}
-          onNavigationLoadingChange={(loading) => setNavigationLoading(loading)}
-        />
-        {showLoader && <LoadingScreen onProgressDone={() => setBootProgressDone(true)} />}
+        {showBootLoader && (
+          <div style={{ padding: '0.75rem 1rem' }}>
+            <Loader label="Loading workspace..." />
+          </div>
+        )}
+        <AppRoutes onInitialDataReady={() => setBootDataReady(true)} />
       </ConfirmProvider>
     </ToastProvider>
   )
