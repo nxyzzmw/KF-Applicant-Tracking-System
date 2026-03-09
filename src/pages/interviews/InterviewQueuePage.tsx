@@ -62,7 +62,8 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [resultByKey, setResultByKey] = useState<Record<string, InterviewResult>>({})
   const [feedbackByKey, setFeedbackByKey] = useState<Record<string, string>>({})
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [stageFilter, setStageFilter] = useState('all')
   const [resultFilter, setResultFilter] = useState<'all' | InterviewResult>('all')
   const [interviewerFilter, setInterviewerFilter] = useState('all')
@@ -71,11 +72,18 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
   const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchQuery(searchInput.trim())
+    }, 350)
+    return () => window.clearTimeout(timer)
+  }, [searchInput])
+
+  useEffect(() => {
     async function loadQueue() {
       setLoading(true)
       setError(null)
       try {
-        const allCandidates = await getCandidates()
+        const allCandidates = await getCandidates(searchQuery ? { search: searchQuery } : {})
         const user = getLocalUser()
         const myId = (user.id || user._id || user.userId || '').trim()
         const myEmail = (user.email || '').trim().toLowerCase()
@@ -125,7 +133,7 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
     }
 
     void loadQueue()
-  }, [role])
+  }, [role, searchQuery])
 
   const totalCount = items.length
 
@@ -182,7 +190,6 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
   }, [items])
 
   const visibleItems = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase()
     const filtered = items.filter((item, index) => {
       const stage = item.interview.stage || ''
       const key = item.interview._id || `${item.candidateId}-${index}`
@@ -193,7 +200,6 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
 
       if (taskTab === 'pending' && !isPendingTask) return false
       if (taskTab === 'finished' && !isFinishedTask) return false
-
       if (stageFilter !== 'all' && stage !== stageFilter) return false
       if (resultFilter !== 'all' && result !== resultFilter) return false
       if (canFilterByInterviewer && interviewerFilter !== 'all') {
@@ -201,20 +207,7 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
         const interviewerValue = (interviewer?.id || interviewer?.email || interviewer?.name || '').trim()
         if (interviewerValue !== interviewerFilter) return false
       }
-
-      if (!query) return true
-      const haystack = [
-        item.candidateName,
-        item.candidateEmail,
-        stage,
-        item.interview.interviewer?.name || '',
-        item.interview.interviewer?.email || '',
-        item.interview.location || '',
-      ]
-        .join(' ')
-        .toLowerCase()
-
-      return haystack.includes(query)
+      return true
     })
 
     const sorted = [...filtered].sort((first, second) => {
@@ -223,13 +216,13 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
       return sortOrder === 'upcoming' ? firstTime - secondTime : secondTime - firstTime
     })
     return sorted
-  }, [canFilterByInterviewer, interviewerFilter, items, resultByKey, resultFilter, searchTerm, sortOrder, stageFilter, taskTab])
+  }, [canFilterByInterviewer, interviewerFilter, items, resultByKey, resultFilter, sortOrder, stageFilter, taskTab])
 
   const totalPages = Math.max(1, Math.ceil(visibleItems.length / INTERVIEWS_PAGE_SIZE))
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchTerm, stageFilter, resultFilter, interviewerFilter, taskTab])
+  }, [searchQuery, stageFilter, resultFilter, interviewerFilter, sortOrder, taskTab])
 
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages))
@@ -242,89 +235,6 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
 
   return (
     <>
-      <section className="page-head interviews-page-head">
-        <div>
-          <p className="breadcrumb">Interviews / Queue</p>
-          <h1>Interview Tasks</h1>
-          <p className="subtitle">Manage and submit feedback for your scheduled interviews.</p>
-        </div>
-        <div className="interviews-page-head__actions">
-          <button
-            type="button"
-            className="ghost-btn"
-            onClick={() => {
-              setSearchTerm('')
-              setStageFilter('all')
-              setResultFilter('all')
-              setInterviewerFilter('all')
-              setSortOrder('upcoming')
-            }}
-          >
-            <span>Clear Filters</span>
-          </button>
-        </div>
-      </section>
-
-      {loading && (
-        <>
-          <section className="overview-grid interviews-overview-grid">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <article key={`overview-skeleton-${index}`} className="overview-card interviews-skeleton-card">
-                <span className="skeleton-block w-20" />
-                <span className="skeleton-block w-12" />
-              </article>
-            ))}
-          </section>
-
-          <section className="editor-card interviews-filters interviews-filters--loading">
-            <span className="skeleton-block w-24" />
-            <span className="skeleton-block w-14" />
-            <span className="skeleton-block w-14" />
-          </section>
-
-          <section className="editor-grid interviews-grid">
-            <article className="editor-card">
-              <div className="interviews-assigned-head">
-                <div>
-                  <span className="skeleton-block w-20" />
-                  <span className="skeleton-block w-14" />
-                </div>
-                <span className="skeleton-block w-12" />
-              </div>
-              <ul className="overview-list interviews-list">
-                {Array.from({ length: 3 }).map((_, index) => (
-                  <li key={`interview-skeleton-${index}`} className="interviews-list__item interviews-list__item--skeleton">
-                    <div className="interviews-list__grid">
-                      <div className="interviews-list__visual interviews-list__visual--skeleton">
-                        <span className="skeleton-block w-12" />
-                        <span className="skeleton-block w-20" />
-                        <span className="skeleton-block w-14" />
-                      </div>
-                      <div className="interviews-list__body">
-                        <div className="interviews-list__top">
-                          <div className="interviews-list__meta">
-                            <span className="skeleton-block w-22" />
-                            <span className="skeleton-block w-20" />
-                            <span className="skeleton-block w-14" />
-                          </div>
-                          <span className="skeleton-block w-14" />
-                        </div>
-                        <span className="skeleton-block w-24" />
-                        <div className="interviews-list__actions">
-                          <span className="skeleton-block w-12" />
-                          <span className="skeleton-block w-12" />
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </article>
-          </section>
-        </>
-      )}
-      {error && <p className="panel-message panel-message--error">{error}</p>}
-
       {!loading && !error && (
         <section className="overview-grid interviews-overview-grid">
           <article className="overview-card">
@@ -333,7 +243,7 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
               <span>Total Assigned</span>
             </h3>
             <p className="overview-note">
-              <strong>{totalCount}</strong> interviews currently in your queue.
+              <strong>{totalCount}</strong>
             </p>
           </article>
           <article className="overview-card">
@@ -342,7 +252,7 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
               <span>Pending Interviews</span>
             </h3>
             <p className="overview-note">
-              <strong>{pendingCount}</strong> interviews still need feedback submission.
+              <strong>{pendingCount}</strong> 
             </p>
           </article>
           <article className="overview-card">
@@ -351,7 +261,7 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
               <span>Completed</span>
             </h3>
             <p className="overview-note">
-              <strong>{completedCount}</strong> interviews marked passed/failed.
+              <strong>{completedCount}</strong> 
             </p>
           </article>
           <article className="overview-card">
@@ -360,7 +270,7 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
               <span>Today</span>
             </h3>
             <p className="overview-note">
-              <strong>{todayCount}</strong> interviews scheduled for today.
+              <strong>{todayCount}</strong>
             </p>
           </article>
         </section>
@@ -369,7 +279,11 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
       {!loading && !error && (
         <section className={`editor-card interviews-filters${canFilterByInterviewer ? ' interviews-filters--with-interviewer' : ''}`}>
           <div className="field interviews-filters__search">
-            <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search candidate, stage, interviewer, location..." />
+            <input
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Search for candidate..."
+            />
           </div>
           <div className="interviews-filters__inline">
             <span>Stage</span>
@@ -415,32 +329,100 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
         </section>
       )}
 
+      {loading && (
+        <section className="editor-grid interviews-grid">
+          <article className="editor-card">
+            <div className="interviews-assigned-head">
+              <div>
+                <span className="skeleton-block w-20" />
+                <span className="skeleton-block w-14" />
+              </div>
+              <span className="skeleton-block w-12" />
+            </div>
+            <ul className="overview-list interviews-list">
+              {Array.from({ length: 3 }).map((_, index) => (
+                <li key={`interview-skeleton-${index}`} className="interviews-list__item interviews-list__item--skeleton">
+                  <div className="interviews-list__grid">
+                    <div className="interviews-list__visual interviews-list__visual--skeleton">
+                      <span className="skeleton-block w-12" />
+                      <span className="skeleton-block w-20" />
+                      <span className="skeleton-block w-14" />
+                    </div>
+                    <div className="interviews-list__body">
+                      <div className="interviews-list__top">
+                        <div className="interviews-list__meta">
+                          <span className="skeleton-block w-22" />
+                          <span className="skeleton-block w-20" />
+                          <span className="skeleton-block w-14" />
+                        </div>
+                        <span className="skeleton-block w-14" />
+                      </div>
+                      <span className="skeleton-block w-24" />
+                      <div className="interviews-list__actions">
+                        <span className="skeleton-block w-12" />
+                        <span className="skeleton-block w-12" />
+                      </div>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </section>
+      )}
+      {error && <p className="panel-message panel-message--error">{error}</p>}
+
       {!loading && !error && (
         <section className="editor-grid interviews-grid">
           <article className="editor-card">
             <div className="interviews-assigned-head">
               <div>
-                <h3>Assigned Interviews</h3>
-                <p className="editor-muted">{visibleItems.length} interview(s) match current filters.</p>
+                <h2>Assigned Interviews</h2>
+                <p className="editor-muted">
+                  {taskTab === 'pending' ? pendingCount : completedCount} interview(s) match current filters. Total assigned: {totalCount}. Scheduled today:{' '}
+                  {todayCount}.
+                </p>
               </div>
-              <div className="interviews-task-tabs" role="tablist" aria-label="Interview tasks">
+              <div className="interviews-page-head__actions">
+                <div className="field interviews-sort-control">
+                  <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value as SortOrder)}>
+                    <option value="upcoming">Sort: Upcoming first</option>
+                    <option value="latest">Sort: Latest first</option>
+                  </select>
+                </div>
+                <div className="interviews-task-tabs" role="tablist" aria-label="Interview tasks">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={taskTab === 'pending'}
+                    className={`interviews-task-tabs__btn${taskTab === 'pending' ? ' is-active' : ''}`}
+                    onClick={() => setTaskTab('pending')}
+                  >
+                    Pending
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={taskTab === 'finished'}
+                    className={`interviews-task-tabs__btn${taskTab === 'finished' ? ' is-active' : ''}`}
+                    onClick={() => setTaskTab('finished')}
+                  >
+                    Finished
+                  </button>
+                </div>
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={taskTab === 'pending'}
-                  className={`interviews-task-tabs__btn${taskTab === 'pending' ? ' is-active' : ''}`}
-                  onClick={() => setTaskTab('pending')}
+                  className="ghost-btn"
+                  onClick={() => {
+                    setSearchInput('')
+                    setSearchQuery('')
+                    setStageFilter('all')
+                    setResultFilter('all')
+                    setInterviewerFilter('all')
+                    setSortOrder('upcoming')
+                  }}
                 >
-                  Pending
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={taskTab === 'finished'}
-                  className={`interviews-task-tabs__btn${taskTab === 'finished' ? ' is-active' : ''}`}
-                  onClick={() => setTaskTab('finished')}
-                >
-                  Finished
+                  Clear Filters
                 </button>
               </div>
             </div>

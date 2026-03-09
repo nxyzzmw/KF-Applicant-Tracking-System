@@ -33,6 +33,23 @@ type CandidateListPageProps = {
   onCandidateDataChanged?: () => void
 }
 
+function getAllowedInterviewerRolesByStage(stage: InterviewStage): ManagedUser['role'][] {
+  if (stage === 'HR Interview') return ['HR Recruiter', 'Hiring Manager']
+  if (stage === 'Technical Interview 1' || stage === 'Technical Interview 2') return ['Interview Panel']
+  return ['Interview Panel', 'HR Recruiter', 'Hiring Manager']
+}
+
+function getInterviewerLabelByStage(stage: InterviewStage): string {
+  if (stage === 'HR Interview') return 'Select Interviewer (HR Recruiter / Hiring Manager)'
+  if (stage === 'Technical Interview 1' || stage === 'Technical Interview 2') return 'Select Interviewer (Interview Panel)'
+  return 'Select Interviewer'
+}
+
+function isStageConstraintMessage(message: string): boolean {
+  const normalized = message.trim().toLowerCase()
+  return normalized.includes('before moving to') || normalized.includes('cannot move candidate stage')
+}
+
 function CandidateListPage({
   jobs,
   initialJobId,
@@ -62,6 +79,7 @@ function CandidateListPage({
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<string>>(new Set())
   const [bulkStatus, setBulkStatus] = useState<CandidateStatus>('Screened')
   const [scheduleTarget, setScheduleTarget] = useState<{ candidateId: string; candidateName: string; stage: InterviewStage } | null>(null)
+  const [stageConstraintMessage, setStageConstraintMessage] = useState<string | null>(null)
   const [scheduleForm, setScheduleForm] = useState<AddInterviewInput>({
     stage: 'Technical Interview 1',
     interviewerId: '',
@@ -84,6 +102,11 @@ function CandidateListPage({
   const boardPanTargetRef = useRef<number | null>(null)
   const didCardDragRef = useRef(false)
   const LIST_PAGE_SIZE = 8
+  const allowedInterviewerRoles = useMemo(() => getAllowedInterviewerRolesByStage(scheduleForm.stage), [scheduleForm.stage])
+  const filteredInterviewers = useMemo(
+    () => interviewers.filter((user) => allowedInterviewerRoles.includes(user.role)),
+    [allowedInterviewerRoles, interviewers],
+  )
 
   const jobMap = useMemo(() => new Map(jobs.map((job) => [job.id, `${job.title} (${job.reqId})`])), [jobs])
 
@@ -132,7 +155,7 @@ function CandidateListPage({
         const users = await getUsers()
         const active = users.filter((user) => user.isActive)
         setActiveUsers(active)
-        setInterviewers(active.filter((user) => user.role === 'Interview Panel' || user.role === 'HR Recruiter'))
+        setInterviewers(active.filter((user) => user.role === 'Interview Panel' || user.role === 'HR Recruiter' || user.role === 'Hiring Manager'))
       } catch {
         setActiveUsers([])
         setInterviewers([])
@@ -140,6 +163,14 @@ function CandidateListPage({
     }
     void loadInterviewers()
   }, [])
+
+  useEffect(() => {
+    if (!scheduleForm.interviewerId) return
+    const stillAllowed = filteredInterviewers.some((user) => user.id === scheduleForm.interviewerId)
+    if (!stillAllowed) {
+      setScheduleForm((prev) => ({ ...prev, interviewerId: '' }))
+    }
+  }, [filteredInterviewers, scheduleForm.interviewerId])
 
   useEffect(() => {
     setListPage(1)
@@ -226,8 +257,7 @@ function CandidateListPage({
     }
     const transitionError = validateStageTransition(existing, status)
     if (transitionError) {
-      setError(transitionError)
-      showToast(transitionError, 'error')
+      setStageConstraintMessage(transitionError)
       return null
     }
 
@@ -251,6 +281,10 @@ function CandidateListPage({
       return updated
     } catch (statusError) {
       const message = getCandidateStatusUpdateErrorMessage(statusError)
+      if (isStageConstraintMessage(message)) {
+        setStageConstraintMessage(message)
+        return null
+      }
       setError(message)
       showToast(message, 'error')
       return null
@@ -261,6 +295,11 @@ function CandidateListPage({
     if (!scheduleTarget) return
     if (!scheduleForm.interviewerId.trim() || !scheduleForm.scheduledAt.trim()) {
       showToast('Interviewer and schedule time are required.', 'error')
+      return
+    }
+    const selectedInterviewer = filteredInterviewers.find((user) => user.id === scheduleForm.interviewerId.trim())
+    if (!selectedInterviewer) {
+      showToast(`Invalid interviewer for ${scheduleForm.stage}. Choose ${getInterviewerLabelByStage(scheduleForm.stage)}.`, 'error')
       return
     }
     setScheduleSaving(true)
@@ -781,6 +820,21 @@ function CandidateListPage({
       )}
 
       <Modal
+        open={Boolean(stageConstraintMessage)}
+        title="Stage Update Blocked"
+        onClose={() => setStageConstraintMessage(null)}
+        actions={(
+          <button type="button" className="primary-btn" onClick={() => setStageConstraintMessage(null)}>
+            OK
+          </button>
+        )}
+      >
+        <p className="panel-message panel-message--error" style={{ margin: 0 }}>
+          {stageConstraintMessage}
+        </p>
+      </Modal>
+
+      <Modal
         open={Boolean(scheduleTarget)}
         title="Schedule Interview"
         onClose={() => {
@@ -808,13 +862,13 @@ function CandidateListPage({
             <input value={scheduleForm.stage} disabled />
           </div>
           <div className="field">
-            <label>Select Interviewer (Interview Panel)</label>
+            <label>{getInterviewerLabelByStage(scheduleForm.stage)}</label>
             <select
               value={scheduleForm.interviewerId}
               onChange={(event) => setScheduleForm((prev) => ({ ...prev, interviewerId: event.target.value }))}
             >
               <option value="">Select interviewer</option>
-              {interviewers.map((user) => (
+              {filteredInterviewers.map((user) => (
                 <option key={user.id} value={user.id}>
                   {`${user.firstName} ${user.lastName}`.trim()} ({user.email})
                 </option>

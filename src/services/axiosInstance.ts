@@ -57,6 +57,13 @@ function parseBaseUrls(): string[] {
 const API_BASE_URLS = parseBaseUrls()
 export const API_BASE_URL = API_BASE_URLS[0]
 let refreshInFlight: Promise<string | null> | null = null
+const isDev = import.meta.env.DEV
+
+function maskToken(token: string | null | undefined): string {
+  if (!token) return 'none'
+  if (token.length <= 10) return `${token.slice(0, 3)}...`
+  return `${token.slice(0, 6)}...${token.slice(-4)}`
+}
 
 function buildRequestUrl(baseUrl: string, path: string): string {
   const trimmedPath = path.trim()
@@ -168,6 +175,13 @@ async function refreshAccessToken(): Promise<string | null> {
 
   if (refreshInFlight) return refreshInFlight
 
+  if (isDev) {
+    console.info('[auth] attempting token refresh', {
+      refreshToken: maskToken(refreshToken),
+      bases: API_BASE_URLS,
+    })
+  }
+
   refreshInFlight = (async () => {
     const refreshPaths = ['/auth/refresh', '/auth/refresh-token']
     for (const baseUrl of API_BASE_URLS) {
@@ -186,11 +200,22 @@ async function refreshAccessToken(): Promise<string | null> {
           const nextRefresh = extractRefreshTokenValue(parsed) ?? refreshToken
           if (!nextAccess) continue
           setTokens(nextAccess, nextRefresh)
+          if (isDev) {
+            console.info('[auth] token refresh success', {
+              endpoint: requestUrl,
+              accessToken: maskToken(nextAccess),
+              refreshToken: maskToken(nextRefresh),
+              receivedNewRefreshToken: Boolean(extractRefreshTokenValue(parsed)),
+            })
+          }
           return nextAccess
         } catch {
           // try next endpoint
         }
       }
+    }
+    if (isDev) {
+      console.warn('[auth] token refresh failed on all configured endpoints')
     }
     return null
   })()
@@ -251,6 +276,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       const message = toApiErrorMessage(raw, parsed, response.status, requestUrl)
 
       if (response.status === 401 && !_retry && !isRefreshCall && hasRefreshToken) {
+        if (isDev) {
+          console.info('[auth] received 401, attempting refresh + retry', {
+            requestPath: path,
+            requestUrl,
+          })
+        }
         const refreshedToken = await refreshAccessToken()
         if (refreshedToken) {
           return apiRequest<T>(path, { ...options, _retry: true })

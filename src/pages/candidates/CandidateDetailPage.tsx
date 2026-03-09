@@ -37,6 +37,18 @@ type CandidateDetailPageProps = {
   onCandidateDataChanged?: () => void
 }
 
+function getAllowedInterviewerRolesByStage(stage: InterviewStage): ManagedUser['role'][] {
+  if (stage === 'HR Interview') return ['HR Recruiter', 'Hiring Manager']
+  if (stage === 'Technical Interview 1' || stage === 'Technical Interview 2') return ['Interview Panel']
+  return ['Interview Panel', 'HR Recruiter', 'Hiring Manager']
+}
+
+function getInterviewerLabelByStage(stage: InterviewStage): string {
+  if (stage === 'HR Interview') return 'Select Interviewer (HR Recruiter / Hiring Manager)'
+  if (stage === 'Technical Interview 1' || stage === 'Technical Interview 2') return 'Select Interviewer (Interview Panel)'
+  return 'Select Interviewer'
+}
+
 function toFormValues(candidate: CandidateRecord): CandidateFormValues {
   return {
     name: candidate.name,
@@ -108,6 +120,12 @@ function CandidateDetailPage({
     }))
     return [...statusEvents].sort((a, b) => b.timestamp - a.timestamp).slice(0, 12)
   }, [candidate])
+
+  const allowedInterviewerRoles = useMemo(() => getAllowedInterviewerRolesByStage(interviewForm.stage), [interviewForm.stage])
+
+  const filteredInterviewers = useMemo(() => {
+    return interviewers.filter((user) => allowedInterviewerRoles.includes(user.role))
+  }, [allowedInterviewerRoles, interviewers])
 
   const journeyItems = useMemo(() => {
     if (!candidate) return []
@@ -208,13 +226,21 @@ function CandidateDetailPage({
     async function loadInterviewers() {
       try {
         const users = await getUsers()
-        setInterviewers(users.filter((user) => user.isActive && (user.role === 'Interview Panel' || user.role === 'HR Recruiter')))
+        setInterviewers(users.filter((user) => user.isActive && (user.role === 'Interview Panel' || user.role === 'HR Recruiter' || user.role === 'Hiring Manager')))
       } catch {
         setInterviewers([])
       }
     }
     void loadInterviewers()
   }, [])
+
+  useEffect(() => {
+    if (!interviewForm.interviewerId) return
+    const stillAllowed = filteredInterviewers.some((user) => user.id === interviewForm.interviewerId)
+    if (!stillAllowed) {
+      setInterviewForm((prev) => ({ ...prev, interviewerId: '' }))
+    }
+  }, [filteredInterviewers, interviewForm.interviewerId])
 
   if (loading) {
     return (
@@ -581,14 +607,14 @@ function CandidateDetailPage({
                 </select>
               </div>
               <div className="field">
-                <label>Select Interviewer (Interview Panel)</label>
+                <label>{getInterviewerLabelByStage(interviewForm.stage)}</label>
                 <select
                   value={interviewForm.interviewerId}
                   disabled={!canEdit}
                   onChange={(event) => setInterviewForm((prev) => ({ ...prev, interviewerId: event.target.value }))}
                 >
                   <option value="">Select interviewer</option>
-                  {interviewers.map((user) => (
+                  {filteredInterviewers.map((user) => (
                     <option key={user.id} value={user.id}>
                       {`${user.firstName} ${user.lastName}`.trim()} ({user.email})
                     </option>
@@ -643,6 +669,11 @@ function CandidateDetailPage({
                 if (!candidate) return
                 if (!interviewForm.interviewerId.trim() || !interviewForm.scheduledAt.trim()) {
                   showToast('Interviewer and scheduled date-time are required.', 'error')
+                  return
+                }
+                const selectedInterviewer = filteredInterviewers.find((user) => user.id === interviewForm.interviewerId.trim())
+                if (!selectedInterviewer) {
+                  showToast(`Invalid interviewer for ${interviewForm.stage}. Choose ${getInterviewerLabelByStage(interviewForm.stage)}.`, 'error')
                   return
                 }
                 try {
