@@ -4,6 +4,10 @@ import { CANDIDATE_STATUS_LABELS, CANDIDATE_STATUS_OPTIONS, type CandidateFormVa
 import type { JobRecord } from '../../features/jobs/jobTypes'
 import { useToast } from '../../components/common/ToastProvider'
 import { getErrorMessage } from '../../utils/errorUtils'
+import * as pdfjsLib from 'pdfjs-dist'
+import mammoth from 'mammoth'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href
 
 type AddCandidatePageProps = {
   jobs: JobRecord[]
@@ -54,28 +58,91 @@ function pickLikelyName(rawText: string): string {
   return ''
 }
 
-function extractBestEffortPdfText(buffer: ArrayBuffer): string {
-  // Best-effort extraction without heavy dependencies.
-  const bytes = new Uint8Array(buffer)
-  let ascii = ''
-  for (let index = 0; index < bytes.length; index += 1) {
-    const code = bytes[index]
-    if (code === 10 || code === 13 || code === 9 || (code >= 32 && code <= 126)) {
-      ascii += String.fromCharCode(code)
-    } else {
-      ascii += ' '
+async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+  const pdf = await pdfjsLib.getDocument({ data: buffer }).promise
+  const pageTexts: string[] = []
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    const textItems = content.items.filter(
+      (item): item is typeof item & { str: string; transform: number[] } => 'str' in item && 'transform' in item,
+    )
+    let lastY: number | null = null
+    const parts: string[] = []
+    for (const item of textItems) {
+      const y = item.transform[5]
+      if (lastY !== null && Math.abs(y - lastY) > 2) {
+        parts.push('\n')
+      }
+      parts.push(item.str)
+      lastY = y
+    }
+    pageTexts.push(parts.join(''))
+  }
+  return pageTexts.join('\n')
+}
+
+function extractLocation(text: string): string {
+  const cityPatterns = [
+    /(?:location|address|city|based\s+(?:in|at)|residing\s+(?:in|at))\s*[:\-]?\s*([A-Za-z][A-Za-z\s,]{2,40})/i,
+    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*),\s*(?:India|USA|UK|Canada|Australia|TN|KA|MH|DL|AP|TG|KL|GJ|RJ|WB|UP|HR|PB|MP|OR|JK|GA)/,
+  ]
+  for (const pattern of cityPatterns) {
+    const match = text.match(pattern)
+    if (match?.[1]) return normalizeWhitespace(match[1])
+  }
+  return ''
+}
+
+function extractExperience(text: string): string {
+  const patterns = [
+    /(\d{1,2}(?:\.\d)?)\+?\s*(?:years?|yrs?)\s*(?:of\s+)?(?:experience|exp)/i,
+    /(?:experience|exp)\s*[:\-]?\s*(\d{1,2}(?:\.\d)?)\+?\s*(?:years?|yrs?)/i,
+    /(?:total\s+(?:it\s+)?experience|work\s+experience)\s*[:\-]?\s*(\d{1,2}(?:\.\d)?)\+?\s*(?:years?|yrs?)/i,
+  ]
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (match?.[1]) return match[1]
+  }
+  return ''
+}
+
+function extractEducation(text: string): string {
+  const degrees = [
+    /\b(Ph\.?D\.?(?:\s+in\s+[A-Za-z\s&]+)?)/i,
+    /\b(M\.?\s*(?:Tech|S|Sc|E|B\.?A|C\.?A|B\.?A)\.?(?:\s+in\s+[A-Za-z\s&]+)?)/i,
+    /\b(B\.?\s*(?:Tech|E|S|Sc|B\.?A|C\.?A|Com)\.?(?:\s+in\s+[A-Za-z\s&]+)?)/i,
+    /\b(Master(?:'s)?\s+(?:of\s+)?[A-Za-z\s&]+)/i,
+    /\b(Bachelor(?:'s)?\s+(?:of\s+)?[A-Za-z\s&]+)/i,
+    /\b(MBA|MCA|BCA|BE|ME|MS)\b/,
+  ]
+  const found: string[] = []
+  for (const pattern of degrees) {
+    const match = text.match(pattern)
+    if (match?.[1] && !found.some((d) => d.toLowerCase() === match[1].toLowerCase())) {
+      found.push(normalizeWhitespace(match[1]))
+    }
+    if (found.length >= 2) break
+  }
+  return found.join(', ')
+}
+
+function extractNoticePeriod(text: string): string {
+  const patterns = [
+    /notice\s*(?:period)?\s*[:\-]?\s*(\d{1,3})\s*days?/i,
+    /(\d{1,3})\s*days?\s*notice/i,
+    /notice\s*(?:period)?\s*[:\-]?\s*(\d{1,2})\s*months?/i,
+    /immediately?\s*(?:available|joinable|joiner)/i,
+  ]
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (match) {
+      if (!match[1]) return '0'
+      if (/month/i.test(match[0])) return String(Number(match[1]) * 30)
+      return match[1]
     }
   }
-
-  const textChunks: string[] = []
-  const parenMatches = ascii.match(/\(([^()]|\\\(|\\\)|\\n|\\r|\\t){2,}\)/g) ?? []
-  for (const chunk of parenMatches) {
-    textChunks.push(chunk.slice(1, -1).replace(/\\[nrt]/g, ' ').replace(/\\[()\\]/g, ' '))
-  }
-
-  const plainChunks = ascii.match(/[A-Za-z][A-Za-z0-9@._+\- ]{6,}/g) ?? []
-  textChunks.push(...plainChunks)
-  return normalizeWhitespace(textChunks.join(' '))
+  return ''
 }
 
 function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidatePageProps) {
@@ -138,12 +205,14 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
 
     if (ext === '.pdf') {
       const buffer = await file.arrayBuffer()
-      extractedText = extractBestEffortPdfText(buffer)
-    } else if (ext === '.docx' || ext === '.doc') {
-      // DOC/DOCX binary parsing in browser is unreliable without parser libs.
+      extractedText = await extractPdfText(buffer)
+    } else if (ext === '.docx') {
+      const buffer = await file.arrayBuffer()
+      const result = await mammoth.extractRawText({ arrayBuffer: buffer })
+      extractedText = result.value
+    } else if (ext === '.doc') {
       setParsedPreview(null)
-      setParserMissingFields(['Name', 'Email', 'Contact', 'Skills'])
-      setParserMessage('Resume uploaded. Auto-fill for DOC/DOCX is limited in browser. Fill missing fields manually.')
+      setParserMessage('Resume uploaded. Auto-fill for .doc format is not supported; please use .docx or PDF instead.')
       return
     } else {
       extractedText = normalizeWhitespace(await file.text())
@@ -157,11 +226,25 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
     }
 
     const email = extractedText.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)?.[0] ?? ''
-    const phone = extractedText.match(/(?:\+\d{1,3}\s?)?(?:\d[\s-]?){9,14}\d/)?.[0] ?? ''
+    const phone = extractedText.match(/(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,4}\)?[\s-]?)?(?:\d[\s-]?){6,12}\d/)?.[0] ?? ''
     const likelyName = pickLikelyName(extractedText)
-    const detectedSkills = ['React', 'Node.js', 'Node', 'TypeScript', 'JavaScript', 'MongoDB', 'Python', 'Java', 'AWS', 'Docker']
-      .filter((skill) => new RegExp(`\\b${skill.replace('.', '\\.')}\\b`, 'i').test(extractedText))
+    const knownSkills = [
+      'React', 'React Native', 'Next.js', 'Angular', 'Vue.js', 'Svelte',
+      'Node.js', 'Express', 'NestJS', 'Django', 'Flask', 'Spring Boot',
+      'TypeScript', 'JavaScript', 'Python', 'Java', 'C#', 'C++', 'Go', 'Rust', 'Ruby', 'PHP', 'Swift', 'Kotlin',
+      'MongoDB', 'PostgreSQL', 'MySQL', 'Redis', 'Elasticsearch', 'DynamoDB', 'Firebase',
+      'AWS', 'Azure', 'GCP', 'Docker', 'Kubernetes', 'Terraform', 'Jenkins', 'CI/CD',
+      'GraphQL', 'REST', 'Git', 'Linux', 'Figma', 'Tailwind CSS', 'SASS', 'HTML', 'CSS',
+      'Machine Learning', 'Deep Learning', 'TensorFlow', 'PyTorch',
+    ]
+    const detectedSkills = knownSkills
+      .filter((skill) => new RegExp(`\\b${skill.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(extractedText))
       .join(', ')
+
+    const location = extractLocation(extractedText)
+    const experience = extractExperience(extractedText)
+    const education = extractEducation(extractedText)
+    const noticePeriod = extractNoticePeriod(extractedText)
 
     const hasUsefulData = Boolean(email || phone || likelyName || detectedSkills)
     if (!hasUsefulData) {
@@ -197,6 +280,10 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
         email: prev.email || email,
         contactDetails: prev.contactDetails || phone,
         skills: prev.skills || detectedSkills,
+        location: prev.location || location,
+        experience: prev.experience || experience,
+        education: prev.education || education,
+        noticePeriod: prev.noticePeriod || noticePeriod,
       }
       setFieldErrors((current) => ({
         ...current,
