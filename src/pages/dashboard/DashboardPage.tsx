@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { SkeletonRows } from '../../components/common/Loader'
 import { getCandidates } from '../../features/candidates/candidateAPI'
 import { CANDIDATE_STATUS_LABELS, type CandidateRecord, type CandidateStatus } from '../../features/candidates/candidateTypes'
@@ -33,13 +33,6 @@ const DEPARTMENT_COLORS = ['#2563eb', '#14b8a6', '#f59e0b', '#8b5cf6', '#ef4444'
  
 function formatShortDate(value?: string): string {
   return formatDisplayDateIN(value, 'No target date')
-}
- 
-function formatWeekLabel(value: string): string {
-  if (!value) return 'Unknown week'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
 }
  
 function normalizeStageKey(value: string): string {
@@ -94,8 +87,28 @@ function startOfWeek(date: Date): Date {
   return start
 }
 
-function toWeekKey(date: Date): string {
-  return startOfWeek(date).toISOString()
+function toDayKey(date: Date): string {
+  return startOfDay(date).toISOString()
+}
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+type TrendViewMode = 'weekly' | 'monthly' | 'yearly'
+
+type DailyHiringTrendPoint = {
+  date: Date
+  dateKey: string
+  dayLabel: string
+  newCandidates: number
+  filledPositions: number
+  openPositions: number
+}
+
+type HiringTrendPoint = {
+  label: string
+  newCandidates: number
+  filledPositions: number
+  openPositions: number
 }
 
 function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
@@ -106,6 +119,8 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
   const [weeklyStatsData, setWeeklyStatsData] = useState<WeeklyHiringStats[]>([])
   const [chartLoading, setChartLoading] = useState(true)
   const [chartError, setChartError] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<TrendViewMode>('weekly')
+  const [currentWeekIndex, setCurrentWeekIndex] = useState(0)
  
   async function loadCandidateOverview() {
     setCandidatesLoading(true)
@@ -210,8 +225,24 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     const totalOpenings = jobs.reduce((sum, job) => sum + job.openings, 0)
     const totalFilled = jobs.reduce((sum, job) => sum + job.filled, 0)
     const fillRate = totalOpenings === 0 ? 0 : Math.round((totalFilled / totalOpenings) * 100)
-    return { totalActiveJobs, totalOpenings, fillRate }
-  }, [jobs])
+    const now = new Date()
+    const currentMonth = now.getMonth()
+    const currentYear = now.getFullYear()
+    const positionsClosedThisMonth = jobs.filter((job) => {
+      if (!job.updatedAt) return false
+      const updatedDate = new Date(job.updatedAt)
+
+      return (
+        (job.status === 'Closed' || job.status === 'Filled') &&
+        updatedDate.getMonth() === currentMonth &&
+        updatedDate.getFullYear() === currentYear
+      )
+    }).length
+    const offersMade = candidates.filter((candidate) => candidate.status === 'Offered' || candidate.status === 'Offer Accepted').length
+    const offersAccepted = candidates.filter((candidate) => candidate.status === 'Offer Accepted').length
+    const offerAcceptanceRatio = offersMade === 0 ? 0 : Math.round((offersAccepted / offersMade) * 100)
+    return { totalActiveJobs, totalOpenings, fillRate, positionsClosedThisMonth, offersMade, offersAccepted, offerAcceptanceRatio }
+  }, [jobs, candidates])
  
   const candidateOverview = useMemo(() => {
     const stageCounts = new Map<CandidateStatus, number>()
@@ -247,32 +278,30 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     }
   }, [candidates])
  
-  const weeklyChartData = useMemo(() => {
-    const fromApi = weeklyStatsData.map((item) => ({
-      ...item,
-      weekLabel: formatWeekLabel(item.weekStart),
-    }))
-
-    if (fromApi.length > 0) return fromApi
-
+  const dailyTrendData = useMemo(() => {
     const now = new Date()
     const currentWeek = startOfWeek(now)
-    const weekStarts: Date[] = []
-    for (let i = 7; i >= 0; i -= 1) {
-      const week = new Date(currentWeek)
-      week.setDate(currentWeek.getDate() - i * 7)
-      weekStarts.push(week)
-    }
+    const defaultStart = new Date(currentWeek)
+    defaultStart.setDate(defaultStart.getDate() - 11 * 7)
+    const timelineStartCandidates: Date[] = []
 
-    const newCandidatesByWeek = new Map<string, number>()
-    const filledByWeek = new Map<string, number>()
+    weeklyStatsData.forEach((item) => {
+      const weekStart = new Date(item.weekStart)
+      if (!Number.isNaN(weekStart.getTime())) {
+        timelineStartCandidates.push(startOfWeek(weekStart))
+      }
+    })
+
+    const newCandidatesByDay = new Map<string, number>()
+    const filledByDay = new Map<string, number>()
 
     candidates.forEach((candidate) => {
       if (candidate.createdAt) {
         const createdAt = new Date(candidate.createdAt)
         if (!Number.isNaN(createdAt.getTime())) {
-          const key = toWeekKey(createdAt)
-          newCandidatesByWeek.set(key, (newCandidatesByWeek.get(key) ?? 0) + 1)
+          timelineStartCandidates.push(startOfDay(createdAt))
+          const key = toDayKey(createdAt)
+          newCandidatesByDay.set(key, (newCandidatesByDay.get(key) ?? 0) + 1)
         }
       }
 
@@ -281,28 +310,136 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
         if (!['Selected', 'Joined', 'Offer Accepted'].includes(history.status)) return
         const updatedAt = new Date(history.updatedAt)
         if (Number.isNaN(updatedAt.getTime())) return
-        const key = toWeekKey(updatedAt)
-        filledByWeek.set(key, (filledByWeek.get(key) ?? 0) + 1)
+        timelineStartCandidates.push(startOfDay(updatedAt))
+        const key = toDayKey(updatedAt)
+        filledByDay.set(key, (filledByDay.get(key) ?? 0) + 1)
       })
     })
 
-    const openPositionsSnapshot = jobs.reduce((sum, job) => sum + Math.max(job.openings - job.filled, 0), 0)
-    let cumulativeFilled = 0
+    const earliestDate =
+      timelineStartCandidates.length > 0
+        ? timelineStartCandidates.reduce((min, current) => (current.getTime() < min.getTime() ? current : min), timelineStartCandidates[0])
+        : defaultStart
+    const timelineStart = startOfWeek(earliestDate)
+    const timelineEnd = new Date(currentWeek)
+    timelineEnd.setDate(timelineEnd.getDate() + 6)
 
-    return weekStarts.map((weekStart) => {
-      const key = weekStart.toISOString()
-      const weeklyFilled = filledByWeek.get(key) ?? 0
-      cumulativeFilled += weeklyFilled
-      return {
-        weekStart: key,
-        weekLabel: formatWeekLabel(key),
-        newCandidates: newCandidatesByWeek.get(key) ?? 0,
-        filledPositions: cumulativeFilled,
+    const openPositionsSnapshot = jobs.reduce((sum, job) => sum + Math.max(job.openings - job.filled, 0), 0)
+
+    const points: DailyHiringTrendPoint[] = []
+    for (let cursor = new Date(timelineStart); cursor <= timelineEnd; cursor.setDate(cursor.getDate() + 1)) {
+      const pointDate = new Date(cursor)
+      const dateKey = pointDate.toISOString()
+      points.push({
+        date: pointDate,
+        dateKey,
+        dayLabel: DAY_LABELS[pointDate.getDay()] ?? 'Day',
+        newCandidates: newCandidatesByDay.get(dateKey) ?? 0,
+        filledPositions: filledByDay.get(dateKey) ?? 0,
         openPositions: openPositionsSnapshot,
-      }
-    })
+      })
+    }
+
+    return points
   }, [weeklyStatsData, candidates, jobs])
- 
+
+  const weeklyGroups = useMemo(() => {
+    const groups: Array<{ key: string; label: string; points: DailyHiringTrendPoint[] }> = []
+    for (let index = 0; index < dailyTrendData.length; index += 7) {
+      const weekPoints = dailyTrendData.slice(index, index + 7)
+      if (weekPoints.length < 7) continue
+      const weekStart = weekPoints[0].date
+      const weekEnd = weekPoints[6].date
+      groups.push({
+        key: weekPoints[0].dateKey,
+        label: `${weekStart.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} - ${weekEnd.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+        })}`,
+        points: weekPoints,
+      })
+    }
+    return groups.reverse()
+  }, [dailyTrendData])
+
+  useEffect(() => {
+    if (currentWeekIndex > weeklyGroups.length - 1) {
+      setCurrentWeekIndex(0)
+    }
+  }, [weeklyGroups, currentWeekIndex])
+
+  function handlePrevWeek() {
+    setCurrentWeekIndex((previous) => Math.min(previous + 1, Math.max(weeklyGroups.length - 1, 0)))
+  }
+
+  function handleNextWeek() {
+    setCurrentWeekIndex((previous) => Math.max(previous - 1, 0))
+  }
+
+  const getWeeklyData = useCallback((): HiringTrendPoint[] => {
+    const selectedWeek = weeklyGroups[currentWeekIndex]?.points ?? []
+    return selectedWeek.map((point) => ({
+      label: point.dayLabel,
+      newCandidates: point.newCandidates,
+      filledPositions: point.filledPositions,
+      openPositions: point.openPositions,
+    }))
+  }, [weeklyGroups, currentWeekIndex])
+
+  const getMonthlyData = useCallback((): HiringTrendPoint[] => {
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth()
+    const buckets = [1, 2, 3, 4].map((week) => ({
+      label: `Week ${week}`,
+      newCandidates: 0,
+      filledPositions: 0,
+      openPositions: 0,
+    }))
+
+    dailyTrendData.forEach((point) => {
+      const pointDate = point.date
+      if (pointDate.getFullYear() !== currentYear || pointDate.getMonth() !== currentMonth) return
+      const weekOfMonth = Math.min(4, Math.ceil(pointDate.getDate() / 7))
+      const bucket = buckets[weekOfMonth - 1]
+      bucket.newCandidates += point.newCandidates
+      bucket.filledPositions += point.filledPositions
+      bucket.openPositions = Math.max(bucket.openPositions, point.openPositions)
+    })
+
+    return buckets
+  }, [dailyTrendData])
+
+  const getYearlyData = useCallback((): HiringTrendPoint[] => {
+    const currentYear = new Date().getFullYear()
+    const buckets = MONTH_LABELS.map((month) => ({
+      label: month,
+      newCandidates: 0,
+      filledPositions: 0,
+      openPositions: 0,
+    }))
+
+    dailyTrendData.forEach((point) => {
+      if (point.date.getFullYear() !== currentYear) return
+      const bucket = buckets[point.date.getMonth()]
+      bucket.newCandidates += point.newCandidates
+      bucket.filledPositions += point.filledPositions
+      bucket.openPositions = Math.max(bucket.openPositions, point.openPositions)
+    })
+
+    return buckets
+  }, [dailyTrendData])
+
+  const trendChartData = useMemo(() => {
+    if (viewMode === 'monthly') return getMonthlyData()
+    if (viewMode === 'yearly') return getYearlyData()
+    return getWeeklyData()
+  }, [viewMode, getMonthlyData, getWeeklyData, getYearlyData])
+
+  const currentWeekLabel = weeklyGroups[currentWeekIndex]?.label ?? ''
+  const isPrevDisabled = currentWeekIndex >= weeklyGroups.length - 1
+  const isNextDisabled = currentWeekIndex <= 0
+
   const normalizedFunnelEntries = useMemo(() => {
     const apiEntries = funnelData.map((item) => ({
       stage: formatStageDisplayLabel(item.stage),
@@ -540,6 +677,24 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
               </p>
               <h3>{stats.fillRate}%</h3>
               <small>Filled vs total openings</small>
+            </article>
+            <article>
+              <p>
+                <span className="material-symbols-rounded">handshake</span>
+                <span>Offer Acceptance Ratio</span>
+              </p>
+              <h3>{stats.offerAcceptanceRatio}%</h3>
+              <small>
+                {stats.offersAccepted} Accepted / {stats.offersMade} Offers
+              </small>
+            </article>
+            <article>
+              <p>
+                <span className="material-symbols-rounded">event_available</span>
+                <span>Positions Closed This Month</span>
+              </p>
+              <h3>{stats.positionsClosedThisMonth}</h3>
+              <small>Roles closed in the current month</small>
             </article>
           </section>
  
@@ -836,23 +991,62 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
             </article>
  
             <article className="overview-card dashboard-analytics-card--full">
-              <h3>
-                <span className="material-symbols-rounded">monitoring</span>
-                <span>Weekly Hiring Trend</span>
-              </h3>
+              <div className="dashboard-trend-header">
+                <h3>
+                  <span className="material-symbols-rounded">monitoring</span>
+                  <span>Hiring Trend</span>
+                </h3>
+                <div className="dashboard-trend-tabs" role="tablist" aria-label="Hiring trend view">
+                  <button
+                    type="button"
+                    className={viewMode === 'weekly' ? 'is-active' : ''}
+                    onClick={() => setViewMode('weekly')}
+                    aria-pressed={viewMode === 'weekly'}
+                  >
+                    Weekly
+                  </button>
+                  <button
+                    type="button"
+                    className={viewMode === 'monthly' ? 'is-active' : ''}
+                    onClick={() => setViewMode('monthly')}
+                    aria-pressed={viewMode === 'monthly'}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    type="button"
+                    className={viewMode === 'yearly' ? 'is-active' : ''}
+                    onClick={() => setViewMode('yearly')}
+                    aria-pressed={viewMode === 'yearly'}
+                  >
+                    Yearly
+                  </button>
+                </div>
+              </div>
+              {viewMode === 'weekly' && (
+                <div className="dashboard-trend-nav">
+                  <button type="button" onClick={handlePrevWeek} disabled={isPrevDisabled}>
+                    ← Previous
+                  </button>
+                  <span>{currentWeekLabel}</span>
+                  <button type="button" onClick={handleNextWeek} disabled={isNextDisabled}>
+                    Next  →
+                  </button>
+                </div>
+              )}
               {chartLoading && <SkeletonRows rows={5} />}
               {chartError && (
                 <p className="overview-note" style={{ color: 'var(--error)' }}>
                   {chartError} <button onClick={() => void loadDashboardCharts()}>Retry</button>
                 </p>
               )}
-              {!chartLoading && !chartError && weeklyChartData.length === 0 && <p className="overview-note">No weekly statistics available.</p>}
-              {!chartLoading && !chartError && weeklyChartData.length > 0 && (
+              {!chartLoading && !chartError && trendChartData.length === 0 && <p className="overview-note">No hiring trend data available.</p>}
+              {!chartLoading && !chartError && trendChartData.length > 0 && (
                 <div className="dashboard-chart">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={weeklyChartData} margin={{ top: 8, right: 18, left: 0, bottom: 8 }}>
+                    <LineChart data={trendChartData} margin={{ top: 8, right: 18, left: 0, bottom: 8 }}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                      <XAxis dataKey="weekLabel" />
+                      <XAxis dataKey="label" />
                       <YAxis allowDecimals={false} />
                       <Tooltip />
                       <Legend />
