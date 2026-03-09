@@ -2004,6 +2004,7 @@ function AppRoutes({ onInitialDataReady }: AppRoutesProps) {
       {view === 'interviews' && (
         <InterviewQueuePage
           role={normalizedRole}
+          canSubmitInterview={permissions.canViewCandidates}
           onInterviewAlert={pushAlert}
         />
       )}

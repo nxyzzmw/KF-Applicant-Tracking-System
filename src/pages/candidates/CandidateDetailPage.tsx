@@ -49,6 +49,11 @@ function getInterviewerLabelByStage(stage: InterviewStage): string {
   return 'Select Interviewer'
 }
 
+function toDisplayValue(value: string | null | undefined, fallback = 'Not provided'): string {
+  const text = (value ?? '').trim()
+  return text.length > 0 ? text : fallback
+}
+
 function toFormValues(candidate: CandidateRecord): CandidateFormValues {
   return {
     name: candidate.name,
@@ -65,6 +70,32 @@ function toFormValues(candidate: CandidateRecord): CandidateFormValues {
     status: candidate.status,
     feedback: candidate.feedback ?? '',
   }
+}
+
+function mergeCandidatePreservingProfile(current: CandidateRecord, incoming: CandidateRecord): CandidateRecord {
+  const hasIncomingProfileData =
+    incoming.email.trim().length > 0 ||
+    incoming.contactDetails.trim().length > 0 ||
+    incoming.location.trim().length > 0 ||
+    incoming.skills.length > 0 ||
+    incoming.experience > 0 ||
+    incoming.noticePeriod > 0 ||
+    Boolean(incoming.resume?.fileName || incoming.resume?.filePath)
+
+  // Some backend endpoints return only interview/status fields.
+  // In that case keep current profile fields and only refresh interview-related data.
+  if (!hasIncomingProfileData) {
+    return {
+      ...current,
+      status: incoming.status || current.status,
+      statusHistory: incoming.statusHistory.length > 0 ? incoming.statusHistory : current.statusHistory,
+      interviews: incoming.interviews,
+      applicationMetrics: incoming.applicationMetrics ?? current.applicationMetrics,
+      updatedAt: incoming.updatedAt ?? current.updatedAt,
+    }
+  }
+
+  return incoming
 }
 
 function CandidateDetailPage({
@@ -212,8 +243,11 @@ function CandidateDetailPage({
           setTimeline([])
         }
         if (interviewsResponse.status === 'fulfilled') {
-          setCandidate(interviewsResponse.value)
-          setEditValues(toFormValues(interviewsResponse.value))
+          setCandidate((prev) => {
+            const next = prev ? mergeCandidatePreservingProfile(prev, interviewsResponse.value) : interviewsResponse.value
+            setEditValues((editPrev) => (editPrev && isEditing ? editPrev : toFormValues(next)))
+            return next
+          })
         }
       } finally {
         setInterviewsLoading(false)
@@ -343,7 +377,7 @@ function CandidateDetailPage({
                   {isEditing ? (
                     <input value={editValues?.email ?? ''} onChange={(event) => setEditValues((prev) => (prev ? { ...prev, email: event.target.value } : prev))} />
                   ) : (
-                    candidate.email
+                    toDisplayValue(candidate.email)
                   )}
                 </strong>
               </li>
@@ -356,7 +390,7 @@ function CandidateDetailPage({
                       onChange={(event) => setEditValues((prev) => (prev ? { ...prev, contactDetails: event.target.value } : prev))}
                     />
                   ) : (
-                    candidate.contactDetails
+                    toDisplayValue(candidate.contactDetails)
                   )}
                 </strong>
               </li>
@@ -366,7 +400,7 @@ function CandidateDetailPage({
                   {isEditing ? (
                     <input value={editValues?.location ?? ''} onChange={(event) => setEditValues((prev) => (prev ? { ...prev, location: event.target.value } : prev))} />
                   ) : (
-                    candidate.location
+                    toDisplayValue(candidate.location)
                   )}
                 </strong>
               </li>

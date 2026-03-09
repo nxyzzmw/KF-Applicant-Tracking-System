@@ -606,12 +606,6 @@ function CandidateListPage({
           </div>
         </section>
       )}
-      {error && (
-        <p className="panel-message panel-message--error">
-          {error} <button onClick={() => void loadCandidateList()}>Retry</button>
-        </p>
-      )}
-
       {!loading && !error && viewMode === 'list' && (
         <section className="table-panel candidate-table-panel">
           {sortedCandidates.length === 0 ? (
@@ -818,6 +812,33 @@ function CandidateListPage({
         </section>
         </>
       )}
+
+      <Modal
+        open={Boolean(error)}
+        title="Error"
+        onClose={() => setError(null)}
+        actions={(
+          <>
+            <button type="button" className="ghost-btn" onClick={() => setError(null)}>
+              Close
+            </button>
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={() => {
+                setError(null)
+                void loadCandidateList()
+              }}
+            >
+              Retry
+            </button>
+          </>
+        )}
+      >
+        <p className="panel-message panel-message--error" style={{ margin: 0 }}>
+          {error}
+        </p>
+      </Modal>
 
       <Modal
         open={Boolean(stageConstraintMessage)}

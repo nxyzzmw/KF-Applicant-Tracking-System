@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { createCandidate, uploadCandidateResume } from '../../features/candidates/candidateAPI'
+import { createCandidate, getCandidateById, uploadCandidateResume } from '../../features/candidates/candidateAPI'
 import { CANDIDATE_STATUS_LABELS, CANDIDATE_STATUS_OPTIONS, type CandidateFormValues } from '../../features/candidates/candidateTypes'
 import type { JobRecord } from '../../features/jobs/jobTypes'
 import { useToast } from '../../components/common/ToastProvider'
@@ -363,17 +363,21 @@ function AddCandidatePage({ jobs, initialJobId, onBack, onCreated }: AddCandidat
     setError(null)
     try {
       const created = await createCandidate(form)
-      const postCreateWarnings: string[] = []
       if (resumeFile) {
         try {
           await uploadCandidateResume(created.id, resumeFile)
-          showToast('Resume uploaded successfully.', 'success')
-        } catch {
-          postCreateWarnings.push('Resume upload failed.')
+          // Verify that resume is persisted and can be previewed later.
+          const refreshed = await getCandidateById(created.id)
+          if (!refreshed.resume?.filePath && !refreshed.resume?.fileName) {
+            throw new Error('Resume upload did not persist. Please retry.')
+          }
+          showToast('Resume uploaded and saved successfully.', 'success')
+        } catch (uploadError) {
+          const message = getErrorMessage(uploadError, 'Candidate created, but resume upload failed. Please retry resume upload from candidate profile.')
+          setError(message)
+          showToast(message, 'error')
+          return
         }
-      }
-      if (postCreateWarnings.length > 0) {
-        setParserMessage(`Candidate created. ${postCreateWarnings.join(' ')}`)
       }
       showToast('Candidate created successfully.', 'success')
       onCreated(created.id)

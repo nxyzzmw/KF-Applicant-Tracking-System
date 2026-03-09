@@ -107,7 +107,8 @@ export const INTERVIEW_STAGE_OPTIONS = [
 
 export type InterviewStage = (typeof INTERVIEW_STAGE_OPTIONS)[number]
 
-export const INTERVIEW_RESULT_OPTIONS = ['Pending', 'Passed', 'Failed', 'On Hold', 'No Show', 'Rescheduled'] as const
+// Keep in sync with backend Candidate model enum.
+export const INTERVIEW_RESULT_OPTIONS = ['Pending', 'Passed', 'Failed', 'On Hold', 'Rescheduled'] as const
 export type InterviewResult = (typeof INTERVIEW_RESULT_OPTIONS)[number]
 
 export type CandidateInterview = {

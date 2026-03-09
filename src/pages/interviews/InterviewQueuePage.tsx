@@ -3,9 +3,11 @@ import { getCandidates, updateInterviewForCandidate } from '../../features/candi
 import { INTERVIEW_RESULT_OPTIONS, type CandidateInterview, type InterviewResult } from '../../features/candidates/candidateTypes'
 import { useToast } from '../../components/common/ToastProvider'
 import { getErrorMessage } from '../../utils/errorUtils'
+import { ApiError } from '../../services/axiosInstance'
 
 type InterviewQueuePageProps = {
   role?: string
+  canSubmitInterview?: boolean
   onInterviewAlert?: (title: string, message: string) => void
 }
 
@@ -52,7 +54,21 @@ function formatDateTime(value?: string): string {
   return date.toLocaleString()
 }
 
-function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps) {
+function isInterviewAssignedToUser(interview: CandidateInterview, user: LocalUser): boolean {
+  const myId = (user.id || user._id || user.userId || '').trim()
+  const myEmail = (user.email || '').trim().toLowerCase()
+  const myName = (user.name || user.fullName || '').trim().toLowerCase()
+  const interviewerId = (interview.interviewer?.id || '').trim()
+  const interviewerEmail = (interview.interviewer?.email || '').trim().toLowerCase()
+  const interviewerName = (interview.interviewer?.name || '').trim().toLowerCase()
+  return (
+    (myId.length > 0 && interviewerId === myId) ||
+    (myEmail.length > 0 && interviewerEmail === myEmail) ||
+    (myName.length > 0 && interviewerName === myName)
+  )
+}
+
+function InterviewQueuePage({ role, canSubmitInterview = true, onInterviewAlert }: InterviewQueuePageProps) {
   const { showToast } = useToast()
   const normalizedRole = (role || '').trim().toLowerCase()
   const canFilterByInterviewer = normalizedRole === 'super admin' || normalizedRole === 'hr recruiter'
@@ -70,6 +86,7 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
   const [sortOrder, setSortOrder] = useState<SortOrder>('upcoming')
   const [taskTab, setTaskTab] = useState<InterviewTaskTab>('pending')
   const [currentPage, setCurrentPage] = useState(1)
+  const localUser = useMemo(() => getLocalUser(), [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -453,6 +470,7 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
                       : 'pending'
                 const resultBadgeClass = selectedResult.toLowerCase().replace(/[^a-z0-9]+/g, '-')
                 const meetingLink = item.interview.meetingLink || 'https://teams.microsoft.com'
+                const canSubmitThisInterview = canSubmitInterview && isInterviewAssignedToUser(item.interview, localUser)
                 return (
                   <li key={key} className="interviews-list__item">
                     <div className="interviews-list__grid">
@@ -533,9 +551,18 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
                             <button
                               type="button"
                               className="ghost-btn interviews-btn interviews-btn--solid"
-                              disabled={!item.interview._id || savingKey === key}
+                              disabled={!item.interview._id || savingKey === key || !canSubmitThisInterview}
+                              title={canSubmitThisInterview ? '' : canSubmitInterview ? 'Only assigned interviewer can submit feedback' : 'Your role is not allowed to submit feedback'}
                               onClick={async () => {
                                 if (!item.interview._id) return
+                                if (!canSubmitThisInterview) {
+                                  if (!canSubmitInterview) {
+                                    showToast('Forbidden: your role is not allowed to submit interview feedback.', 'error')
+                                  } else {
+                                    showToast('Forbidden: only the assigned interviewer can submit this interview feedback.', 'error')
+                                  }
+                                  return
+                                }
                                 if (!selectedResult || selectedResult === 'Pending') {
                                   showToast('Select a valid interview result before submitting.', 'error')
                                   return
@@ -565,6 +592,10 @@ function InterviewQueuePage({ role, onInterviewAlert }: InterviewQueuePageProps)
                                   )
                                   showToast('Interview result and feedback submitted.', 'success')
                                 } catch (submitError) {
+                                  if (submitError instanceof ApiError && submitError.status === 403) {
+                                    showToast('Forbidden: you do not have permission to submit this interview. Please use the assigned interviewer account.', 'error')
+                                    return
+                                  }
                                   showToast(getErrorMessage(submitError, 'Unable to submit interview feedback'), 'error')
                                 } finally {
                                   setSavingKey(null)
