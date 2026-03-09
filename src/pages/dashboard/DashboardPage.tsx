@@ -121,6 +121,8 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
   const [chartError, setChartError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<TrendViewMode>('weekly')
   const [currentWeekIndex, setCurrentWeekIndex] = useState(0)
+  const [currentMonthOffset, setCurrentMonthOffset] = useState(0)
+  const [currentYearOffset, setCurrentYearOffset] = useState(0)
  
   async function loadCandidateOverview() {
     setCandidatesLoading(true)
@@ -277,6 +279,20 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       topStages,
     }
   }, [candidates])
+
+  const recruiterWorkload = useMemo(() => {
+    const workloadByRecruiter = new Map<string, number>()
+    candidates.forEach((candidate) => {
+      const recruiterName = candidate.recruiter?.trim()
+      if (!recruiterName) return
+      workloadByRecruiter.set(recruiterName, (workloadByRecruiter.get(recruiterName) ?? 0) + 1)
+    })
+
+    return Array.from(workloadByRecruiter.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5)
+  }, [candidates])
  
   const dailyTrendData = useMemo(() => {
     const now = new Date()
@@ -362,17 +378,53 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     return groups.reverse()
   }, [dailyTrendData])
 
+  const { maxMonthOffset, maxYearOffset } = useMemo(() => {
+    if (dailyTrendData.length === 0) return { maxMonthOffset: 0, maxYearOffset: 0 }
+    const now = new Date()
+    const oldestDate = dailyTrendData.reduce((oldest, point) => (point.date.getTime() < oldest.getTime() ? point.date : oldest), dailyTrendData[0].date)
+    const monthDiff = (now.getFullYear() - oldestDate.getFullYear()) * 12 + (now.getMonth() - oldestDate.getMonth())
+    const yearDiff = now.getFullYear() - oldestDate.getFullYear()
+    return {
+      maxMonthOffset: Math.max(0, monthDiff),
+      maxYearOffset: Math.max(0, yearDiff),
+    }
+  }, [dailyTrendData])
+
   useEffect(() => {
     if (currentWeekIndex > weeklyGroups.length - 1) {
       setCurrentWeekIndex(0)
     }
   }, [weeklyGroups, currentWeekIndex])
 
-  function handlePrevWeek() {
+  useEffect(() => {
+    if (currentMonthOffset > maxMonthOffset) setCurrentMonthOffset(0)
+  }, [currentMonthOffset, maxMonthOffset])
+
+  useEffect(() => {
+    if (currentYearOffset > maxYearOffset) setCurrentYearOffset(0)
+  }, [currentYearOffset, maxYearOffset])
+
+  function handlePrevTrendPeriod() {
+    if (viewMode === 'monthly') {
+      setCurrentMonthOffset((previous) => Math.min(previous + 1, maxMonthOffset))
+      return
+    }
+    if (viewMode === 'yearly') {
+      setCurrentYearOffset((previous) => Math.min(previous + 1, maxYearOffset))
+      return
+    }
     setCurrentWeekIndex((previous) => Math.min(previous + 1, Math.max(weeklyGroups.length - 1, 0)))
   }
 
-  function handleNextWeek() {
+  function handleNextTrendPeriod() {
+    if (viewMode === 'monthly') {
+      setCurrentMonthOffset((previous) => Math.max(previous - 1, 0))
+      return
+    }
+    if (viewMode === 'yearly') {
+      setCurrentYearOffset((previous) => Math.max(previous - 1, 0))
+      return
+    }
     setCurrentWeekIndex((previous) => Math.max(previous - 1, 0))
   }
 
@@ -388,8 +440,9 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
 
   const getMonthlyData = useCallback((): HiringTrendPoint[] => {
     const now = new Date()
-    const currentYear = now.getFullYear()
-    const currentMonth = now.getMonth()
+    const targetDate = new Date(now.getFullYear(), now.getMonth() - currentMonthOffset, 1)
+    const targetYear = targetDate.getFullYear()
+    const targetMonth = targetDate.getMonth()
     const buckets = [1, 2, 3, 4].map((week) => ({
       label: `Week ${week}`,
       newCandidates: 0,
@@ -399,7 +452,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
 
     dailyTrendData.forEach((point) => {
       const pointDate = point.date
-      if (pointDate.getFullYear() !== currentYear || pointDate.getMonth() !== currentMonth) return
+      if (pointDate.getFullYear() !== targetYear || pointDate.getMonth() !== targetMonth) return
       const weekOfMonth = Math.min(4, Math.ceil(pointDate.getDate() / 7))
       const bucket = buckets[weekOfMonth - 1]
       bucket.newCandidates += point.newCandidates
@@ -408,10 +461,10 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     })
 
     return buckets
-  }, [dailyTrendData])
+  }, [dailyTrendData, currentMonthOffset])
 
   const getYearlyData = useCallback((): HiringTrendPoint[] => {
-    const currentYear = new Date().getFullYear()
+    const targetYear = new Date().getFullYear() - currentYearOffset
     const buckets = MONTH_LABELS.map((month) => ({
       label: month,
       newCandidates: 0,
@@ -420,7 +473,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     }))
 
     dailyTrendData.forEach((point) => {
-      if (point.date.getFullYear() !== currentYear) return
+      if (point.date.getFullYear() !== targetYear) return
       const bucket = buckets[point.date.getMonth()]
       bucket.newCandidates += point.newCandidates
       bucket.filledPositions += point.filledPositions
@@ -428,7 +481,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
     })
 
     return buckets
-  }, [dailyTrendData])
+  }, [dailyTrendData, currentYearOffset])
 
   const trendChartData = useMemo(() => {
     if (viewMode === 'monthly') return getMonthlyData()
@@ -437,8 +490,19 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
   }, [viewMode, getMonthlyData, getWeeklyData, getYearlyData])
 
   const currentWeekLabel = weeklyGroups[currentWeekIndex]?.label ?? ''
-  const isPrevDisabled = currentWeekIndex >= weeklyGroups.length - 1
-  const isNextDisabled = currentWeekIndex <= 0
+  const currentMonthLabel = useMemo(() => {
+    const targetDate = new Date(new Date().getFullYear(), new Date().getMonth() - currentMonthOffset, 1)
+    return targetDate.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })
+  }, [currentMonthOffset])
+  const currentYearLabel = `${new Date().getFullYear() - currentYearOffset}`
+  const currentTrendLabel = viewMode === 'monthly' ? currentMonthLabel : viewMode === 'yearly' ? currentYearLabel : currentWeekLabel
+  const isPrevDisabled =
+    viewMode === 'monthly'
+      ? currentMonthOffset >= maxMonthOffset
+      : viewMode === 'yearly'
+        ? currentYearOffset >= maxYearOffset
+        : currentWeekIndex >= weeklyGroups.length - 1
+  const isNextDisabled = viewMode === 'monthly' ? currentMonthOffset <= 0 : viewMode === 'yearly' ? currentYearOffset <= 0 : currentWeekIndex <= 0
 
   const normalizedFunnelEntries = useMemo(() => {
     const apiEntries = funnelData.map((item) => ({
@@ -892,6 +956,28 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 )}
               </ul>
             </article>
+
+            <article className="overview-card">
+              <h3>
+                <span className="material-symbols-rounded">groups</span>
+                <span>Recruiter Workload</span>
+              </h3>
+              {candidatesLoading && <p className="overview-note">Loading recruiter workload...</p>}
+              {candidatesError && <p className="overview-note" style={{ color: 'var(--error)' }}>{candidatesError}</p>}
+              {!candidatesLoading && !candidatesError && recruiterWorkload.length === 0 && (
+                <p className="overview-note">No recruiter assignments available yet.</p>
+              )}
+              {!candidatesLoading && !candidatesError && recruiterWorkload.length > 0 && (
+                <ul className="overview-list overview-list--compact">
+                  {recruiterWorkload.map((item) => (
+                    <li key={item.name}>
+                      <span>{item.name}</span>
+                      <span>{item.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </article>
           </section>
  
           <section className="overview-grid dashboard-analytics-layout" style={{ marginTop: '0.8rem' }}>
@@ -1023,17 +1109,15 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                   </button>
                 </div>
               </div>
-              {viewMode === 'weekly' && (
-                <div className="dashboard-trend-nav">
-                  <button type="button" onClick={handlePrevWeek} disabled={isPrevDisabled}>
-                    ← Previous
-                  </button>
-                  <span>{currentWeekLabel}</span>
-                  <button type="button" onClick={handleNextWeek} disabled={isNextDisabled}>
-                    Next  →
-                  </button>
-                </div>
-              )}
+              <div className="dashboard-trend-nav">
+                <button type="button" onClick={handlePrevTrendPeriod} disabled={isPrevDisabled}>
+                  ← Previous
+                </button>
+                <span>{currentTrendLabel}</span>
+                <button type="button" onClick={handleNextTrendPeriod} disabled={isNextDisabled}>
+                  Next  →
+                </button>
+              </div>
               {chartLoading && <SkeletonRows rows={5} />}
               {chartError && (
                 <p className="overview-note" style={{ color: 'var(--error)' }}>
