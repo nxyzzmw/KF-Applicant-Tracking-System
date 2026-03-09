@@ -1280,6 +1280,18 @@ tbody td span {
   color: var(--text-muted-2);
 }
 
+.recruiter-workload-card {
+  height: 260px;
+}
+
+.recruiter-workload-scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: 190px;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
 .candidate-interview-card {
   border-color: #c8d6ee;
   background: #ffffff;

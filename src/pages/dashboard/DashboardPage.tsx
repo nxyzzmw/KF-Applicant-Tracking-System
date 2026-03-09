@@ -5,6 +5,8 @@ import { CANDIDATE_STATUS_LABELS, type CandidateRecord, type CandidateStatus } f
 import { getDashboardFunnel, getDashboardWeeklyStats } from '../../features/dashboard/dashboardAPI'
 import type { FunnelStageStats, WeeklyHiringStats } from '../../features/dashboard/dashboardTypes'
 import type { JobRecord } from '../../features/jobs/jobTypes'
+import { getUsers, type ManagedUser } from '../../features/users/usersAdminAPI'
+import { subscribeCacheInvalidation } from '../../services/queryCache'
 import { formatDisplayDateIN } from '../../utils/dateUtils'
 import { getErrorMessage } from '../../utils/errorUtils'
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
@@ -30,6 +32,7 @@ const PIPELINE_STAGE_ORDER = [
 const OUTCOME_COLORS = ['#16a34a', '#dc2626', '#2563eb']
 const PIPELINE_STAGE_COLORS = ['#2563eb', '#06b6d4', '#14b8a6', '#f59e0b', '#f97316', '#8b5cf6', '#22c55e', '#ef4444']
 const DEPARTMENT_COLORS = ['#2563eb', '#14b8a6', '#f59e0b', '#8b5cf6', '#ef4444', '#22c55e']
+const DASHBOARD_REFRESH_INTERVAL_MS = 20_000
  
 function formatShortDate(value?: string): string {
   return formatDisplayDateIN(value, 'No target date')
@@ -41,6 +44,27 @@ function normalizeStageKey(value: string): string {
  
 function asChartNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function getCandidateAssigneeName(candidate: CandidateRecord, userById: Record<string, ManagedUser>): string {
+  if (candidate.recruiter?.trim()) return candidate.recruiter.trim()
+  if (candidate.referal?.trim()) return candidate.referal.trim()
+  const latestAssignedInterview = [...(candidate.interviews ?? [])]
+    .sort((a, b) => {
+      const aTime = new Date(a.scheduledAt || a.updatedAt || a.createdAt || 0).getTime()
+      const bTime = new Date(b.scheduledAt || b.updatedAt || b.createdAt || 0).getTime()
+      return bTime - aTime
+    })
+    .find((interview) => interview.interviewer?.id || interview.interviewer?.name?.trim() || interview.interviewer?.email?.trim())
+  const interviewerId = latestAssignedInterview?.interviewer?.id || ''
+  const fromDirectory = interviewerId ? userById[interviewerId] : undefined
+  if (fromDirectory) {
+    const fullName = `${fromDirectory.firstName} ${fromDirectory.lastName}`.trim()
+    return fullName || fromDirectory.email || ''
+  }
+  if (latestAssignedInterview?.interviewer?.name?.trim()) return latestAssignedInterview.interviewer.name.trim()
+  if (latestAssignedInterview?.interviewer?.email?.trim()) return latestAssignedInterview.interviewer.email.trim()
+  return ''
 }
  
 function formatStageDisplayLabel(stage: string): string {
@@ -117,6 +141,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
   const [candidatesError, setCandidatesError] = useState<string | null>(null)
   const [funnelData, setFunnelData] = useState<FunnelStageStats[]>([])
   const [weeklyStatsData, setWeeklyStatsData] = useState<WeeklyHiringStats[]>([])
+  const [activeUsers, setActiveUsers] = useState<ManagedUser[]>([])
   const [chartLoading, setChartLoading] = useState(true)
   const [chartError, setChartError] = useState<string | null>(null)
   const [viewMode, setViewMode] = useState<TrendViewMode>('weekly')
@@ -124,22 +149,23 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
   const [currentMonthOffset, setCurrentMonthOffset] = useState(0)
   const [currentYearOffset, setCurrentYearOffset] = useState(0)
  
-  async function loadCandidateOverview() {
-    setCandidatesLoading(true)
+  const loadCandidateOverview = useCallback(async (showLoader = true) => {
+    if (showLoader) setCandidatesLoading(true)
     setCandidatesError(null)
     try {
+      // fetching directly; rely on external invalidations and refresh interval
       const result = await getCandidates()
       setCandidates(result)
     } catch (loadError) {
       const message = getErrorMessage(loadError, 'Unable to load candidate overview')
       setCandidatesError(message)
     } finally {
-      setCandidatesLoading(false)
+      if (showLoader) setCandidatesLoading(false)
     }
-  }
+  }, [])
  
-  async function loadDashboardCharts() {
-    setChartLoading(true)
+  const loadDashboardCharts = useCallback(async (showLoader = true) => {
+    if (showLoader) setChartLoading(true)
     setChartError(null)
     try {
       const [funnel, weeklyStats] = await Promise.all([getDashboardFunnel(), getDashboardWeeklyStats()])
@@ -149,14 +175,64 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       const message = getErrorMessage(loadError, 'Unable to load dashboard charts')
       setChartError(message)
     } finally {
-      setChartLoading(false)
+      if (showLoader) setChartLoading(false)
     }
-  }
+  }, [])
+
+  const loadActiveUsers = useCallback(async () => {
+    try {
+      const users = await getUsers()
+      setActiveUsers(users.filter((user) => user.isActive))
+    } catch {
+      setActiveUsers([])
+    }
+  }, [])
  
   useEffect(() => {
     void loadCandidateOverview()
     void loadDashboardCharts()
-  }, [])
+    void loadActiveUsers()
+  }, [loadCandidateOverview, loadDashboardCharts, loadActiveUsers])
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void loadCandidateOverview(false)
+      void loadDashboardCharts(false)
+    }, DASHBOARD_REFRESH_INTERVAL_MS)
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        void loadCandidateOverview(false)
+        void loadDashboardCharts(false)
+        void loadActiveUsers()
+      }
+    }
+
+    const unsubscribe = subscribeCacheInvalidation((prefix) => {
+      // whenever any part of the candidate cache is cleared, pull fresh data
+      if (prefix.startsWith('candidates:')) {
+        void loadCandidateOverview(false)
+      }
+    })
+
+    window.addEventListener('focus', handleVisibilityOrFocus)
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus)
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', handleVisibilityOrFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus)
+      unsubscribe()
+    }
+  }, [loadCandidateOverview, loadDashboardCharts, loadActiveUsers])
+
+  const userById = useMemo(
+    () =>
+      activeUsers.reduce<Record<string, ManagedUser>>((acc, user) => {
+        acc[user.id] = user
+        return acc
+      }, {}),
+    [activeUsers],
+  )
  
   const overview = useMemo(() => {
     const now = startOfDay(new Date())
@@ -257,7 +333,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       .slice(0, 8)
       .map(([status, count]) => ({ status, count }))
  
-    const unassigned = candidates.filter((candidate) => !candidate.recruiter || candidate.recruiter.trim().length === 0).length
+    const unassigned = candidates.filter((candidate) => getCandidateAssigneeName(candidate, userById).length === 0).length
     const noNotes = candidates.filter((candidate) => candidate.notes.length === 0).length
     const noResume = candidates.filter((candidate) => !candidate.resume?.fileName).length
     const activePipeline = candidates.filter((candidate) => !['Joined', 'Cancelled'].includes(candidate.status)).length
@@ -278,21 +354,33 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
       closureRisk,
       topStages,
     }
-  }, [candidates])
+  }, [candidates, userById])
 
+  // compute recruiter workload from the existing candidate assignment data.
   const recruiterWorkload = useMemo(() => {
-    const workloadByRecruiter = new Map<string, number>()
+    const workloadByRecruiter = new Map<string, { name: string; count: number }>()
     candidates.forEach((candidate) => {
-      const recruiterName = candidate.recruiter?.trim()
+      const recruiterName = getCandidateAssigneeName(candidate, userById)
       if (!recruiterName) return
-      workloadByRecruiter.set(recruiterName, (workloadByRecruiter.get(recruiterName) ?? 0) + 1)
+      const normalizedKey = recruiterName.toLowerCase().replace(/\s+/g, ' ').trim()
+      const existing = workloadByRecruiter.get(normalizedKey)
+      if (existing) {
+        existing.count += 1
+      } else {
+        workloadByRecruiter.set(normalizedKey, { name: recruiterName, count: 1 })
+      }
     })
 
-    return Array.from(workloadByRecruiter.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5)
-  }, [candidates])
+    let list = Array.from(workloadByRecruiter.values()).sort((a, b) => b.count - a.count)
+
+    // if no recruiter names were determined but there are unassigned
+    // candidates, show a single row so the card isn't empty.
+    if (list.length === 0 && candidateOverview.unassigned > 0) {
+      list = [{ name: 'Unassigned', count: candidateOverview.unassigned }]
+    }
+
+    return list
+  }, [candidates, candidateOverview.unassigned, userById])
  
   const dailyTrendData = useMemo(() => {
     const now = new Date()
@@ -957,7 +1045,7 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
               </ul>
             </article>
 
-            <article className="overview-card">
+            <article className="overview-card recruiter-workload-card">
               <h3>
                 <span className="material-symbols-rounded">groups</span>
                 <span>Recruiter Workload</span>
@@ -968,14 +1056,16 @@ function DashboardPage({ jobs, loading, error, onRetry }: DashboardPageProps) {
                 <p className="overview-note">No recruiter assignments available yet.</p>
               )}
               {!candidatesLoading && !candidatesError && recruiterWorkload.length > 0 && (
-                <ul className="overview-list overview-list--compact">
-                  {recruiterWorkload.map((item) => (
-                    <li key={item.name}>
-                      <span>{item.name}</span>
-                      <span>{item.count}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="recruiter-workload-scroll">
+                  <ul className="overview-list overview-list--compact">
+                    {recruiterWorkload.map((item) => (
+                      <li key={item.name}>
+                        <span>{item.name}</span>
+                        <span>{item.count}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </article>
           </section>
