@@ -1,0 +1,66 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]
+   /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+
+4 0 obj
+<< /Length 1380 >>
+stream
+BT
+/F1 18 Tf 72 740 Td (Rahul Krishnan) Tj
+/F1 10 Tf 0 -20 Td (Email: rahul.krishnan@gmail.com) Tj
+0 -15 Td (Phone: +91 98765 43210) Tj
+0 -15 Td (Location: Chennai, India) Tj
+0 -15 Td (LinkedIn: linkedin.com/in/rahulkrishnan) Tj
+/F1 14 Tf 0 -30 Td (Professional Summary) Tj
+/F1 10 Tf 0 -18 Td (Full Stack Developer with 5.5 years of experience in building scalable web applications.) Tj
+0 -15 Td (Passionate about clean architecture, performance optimization, and modern UI frameworks.) Tj
+/F1 14 Tf 0 -30 Td (Skills) Tj
+/F1 10 Tf 0 -18 Td (React, TypeScript, JavaScript, Node.js, Express, Next.js, MongoDB, PostgreSQL,) Tj
+0 -15 Td (Docker, AWS, Git, REST, GraphQL, Tailwind CSS, Redis, HTML, CSS) Tj
+/F1 14 Tf 0 -30 Td (Experience) Tj
+/F1 11 Tf 0 -18 Td (Senior Software Engineer - KnackForge Inc, Chennai) Tj
+/F1 10 Tf 0 -15 Td (Jan 2022 - Present) Tj
+0 -15 Td (- Led development of an ATS platform using React and Node.js) Tj
+0 -15 Td (- Implemented CI/CD pipelines with Docker and AWS ECS) Tj
+0 -15 Td (- Mentored a team of 4 junior developers) Tj
+/F1 11 Tf 0 -25 Td (Software Engineer - TechCorp Solutions, Bangalore) Tj
+/F1 10 Tf 0 -15 Td (Jun 2019 - Dec 2021) Tj
+0 -15 Td (- Built RESTful APIs serving 50k daily active users) Tj
+0 -15 Td (- Migrated legacy jQuery frontend to React with TypeScript) Tj
+/F1 14 Tf 0 -30 Td (Education) Tj
+/F1 10 Tf 0 -18 Td (B.Tech in Computer Science - Anna University, Chennai, 2019) Tj
+0 -15 Td (CGPA: 8.6/10) Tj
+/F1 14 Tf 0 -30 Td (Notice Period) Tj
+/F1 10 Tf 0 -18 Td (Notice period: 30 days) Tj
+ET
+endstream
+endobj
+
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000296 00000 n 
+0000000230 00000 n 
+
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+1730
+%%EOF
