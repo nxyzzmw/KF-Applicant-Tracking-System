@@ -10,13 +10,8 @@ import {
   createReportFileName,
   exportWeeklyReport,
   filterWeeklyReportRows,
-  getNextScheduledRun,
-  getWeeklyReportHistory,
-  getWeeklyReportSchedule,
-  saveWeeklyReportHistory,
-  saveWeeklyReportSchedule,
 } from '../../features/reports/reportsAPI'
-import type { HistoricalReportRecord, ReportExportFormat, WeeklyReportFilters, WeeklyReportSchedule } from '../../features/reports/reportTypes'
+import type { ReportExportFormat, WeeklyReportFilters } from '../../features/reports/reportTypes'
 import { getErrorMessage } from '../../utils/errorUtils'
 
 type WeeklyReportPageProps = {
@@ -26,39 +21,11 @@ type WeeklyReportPageProps = {
   onRetryJobs: () => void
 }
 
-const DAYS: Array<{ value: number; label: string }> = [
-  { value: 1, label: 'Monday' },
-  { value: 2, label: 'Tuesday' },
-  { value: 3, label: 'Wednesday' },
-  { value: 4, label: 'Thursday' },
-  { value: 5, label: 'Friday' },
-  { value: 6, label: 'Saturday' },
-  { value: 0, label: 'Sunday' },
-]
-
-function formatScheduleDateTime(value: Date | null): string {
-  if (!value) return 'Not scheduled'
-  return value.toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function formatFilterLabel(value: string): string {
-  return value === 'all' ? 'All' : value
-}
-
 function WeeklyReportPage({ jobs, jobsLoading, jobsError, onRetryJobs }: WeeklyReportPageProps) {
   const [candidates, setCandidates] = useState<CandidateRecord[]>([])
   const [candidateLoading, setCandidateLoading] = useState(true)
   const [candidateError, setCandidateError] = useState<string | null>(null)
   const [filters, setFilters] = useState<WeeklyReportFilters>(DEFAULT_WEEKLY_REPORT_FILTERS)
-  const [schedule, setSchedule] = useState<WeeklyReportSchedule>(getWeeklyReportSchedule)
-  const [scheduleSavedMessage, setScheduleSavedMessage] = useState('')
-  const [historicalReports, setHistoricalReports] = useState<HistoricalReportRecord[]>(getWeeklyReportHistory)
 
   const loadCandidates = useCallback(async () => {
     setCandidateLoading(true)
@@ -77,14 +44,6 @@ function WeeklyReportPage({ jobs, jobsLoading, jobsError, onRetryJobs }: WeeklyR
     void loadCandidates()
   }, [loadCandidates])
 
-  useEffect(() => {
-    if (!scheduleSavedMessage) return
-    const timer = window.setTimeout(() => setScheduleSavedMessage(''), 2800)
-    return () => {
-      window.clearTimeout(timer)
-    }
-  }, [scheduleSavedMessage])
-
   const allRows = useMemo(() => buildWeeklyReportRows(candidates, jobs), [candidates, jobs])
   const filteredRows = useMemo(() => filterWeeklyReportRows(allRows, filters), [allRows, filters])
   const isLoading = jobsLoading || candidateLoading
@@ -94,8 +53,6 @@ function WeeklyReportPage({ jobs, jobsLoading, jobsError, onRetryJobs }: WeeklyR
   const jobTitles = useMemo(() => Array.from(new Set(allRows.map((row) => row.jobTitle))).sort((a, b) => a.localeCompare(b)), [allRows])
   const recruiters = useMemo(() => Array.from(new Set(allRows.map((row) => row.recruiter))).sort((a, b) => a.localeCompare(b)), [allRows])
   const locations = useMemo(() => Array.from(new Set(allRows.map((row) => row.location))).sort((a, b) => a.localeCompare(b)), [allRows])
-  const nextSchedule = useMemo(() => getNextScheduledRun(schedule), [schedule])
-
   function handleFilterChange<K extends keyof WeeklyReportFilters>(key: K, value: WeeklyReportFilters[K]) {
     setFilters((prev) => ({ ...prev, [key]: value }))
   }
@@ -108,27 +65,6 @@ function WeeklyReportPage({ jobs, jobsLoading, jobsError, onRetryJobs }: WeeklyR
     if (filteredRows.length === 0) return
     const fileName = createReportFileName(format)
     exportWeeklyReport(filteredRows, format, fileName)
-    const entry: HistoricalReportRecord = {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      createdAt: new Date().toISOString(),
-      format,
-      fileName,
-      rowCount: filteredRows.length,
-      filters,
-      rows: filteredRows,
-    }
-    const saved = saveWeeklyReportHistory(entry)
-    setHistoricalReports(saved)
-  }
-
-  function handleSaveSchedule() {
-    const saved = saveWeeklyReportSchedule(schedule)
-    setSchedule(saved)
-    setScheduleSavedMessage(`Saved. Auto-email runs weekly on ${DAYS.find((day) => day.value === saved.dayOfWeek)?.label ?? 'Friday'} at ${saved.time}.`)
-  }
-
-  function handleDownloadHistorical(item: HistoricalReportRecord) {
-    exportWeeklyReport(item.rows, item.format, item.fileName)
   }
 
   return (
@@ -167,8 +103,14 @@ function WeeklyReportPage({ jobs, jobsLoading, jobsError, onRetryJobs }: WeeklyR
             <option key={location} value={location}>{location}</option>
           ))}
         </select>
-        <input type="date" value={filters.dateFrom} onChange={(event) => handleFilterChange('dateFrom', event.target.value)} />
-        <input type="date" value={filters.dateTo} onChange={(event) => handleFilterChange('dateTo', event.target.value)} />
+        <label className="report-date-filter-field">
+          <span>From</span>
+          <input type="date" value={filters.dateFrom} onChange={(event) => handleFilterChange('dateFrom', event.target.value)} />
+        </label>
+        <label className="report-date-filter-field">
+          <span>To</span>
+          <input type="date" value={filters.dateTo} onChange={(event) => handleFilterChange('dateTo', event.target.value)} />
+        </label>
         <button type="button" className="ghost-btn clear-btn" onClick={handleClearFilters}>Clear Filters</button>
       </section>
 
@@ -182,74 +124,9 @@ function WeeklyReportPage({ jobs, jobsLoading, jobsError, onRetryJobs }: WeeklyR
         }}
       />
 
-      <section className="overview-grid reports-overview-grid">
-        <article className="overview-card">
-          <h3>
-            <span className="material-symbols-rounded">schedule_send</span>
-            <span>Auto-Schedule Email Delivery</span>
-          </h3>
-          <label className="report-toggle">
-            <input
-              type="checkbox"
-              checked={schedule.enabled}
-              onChange={(event) => setSchedule((prev) => ({ ...prev, enabled: event.target.checked }))}
-            />
-            Enable weekly auto-email
-          </label>
-          <div className="reports-schedule-grid">
-            <select
-              value={String(schedule.dayOfWeek)}
-              onChange={(event) => setSchedule((prev) => ({ ...prev, dayOfWeek: Number(event.target.value) }))}
-            >
-              {DAYS.map((day) => (
-                <option key={day.value} value={String(day.value)}>{day.label}</option>
-              ))}
-            </select>
-            <input type="time" value={schedule.time} onChange={(event) => setSchedule((prev) => ({ ...prev, time: event.target.value }))} />
-            <input
-              type="text"
-              placeholder="Recipients (comma separated emails)"
-              value={schedule.recipients.join(', ')}
-              onChange={(event) =>
-                setSchedule((prev) => ({
-                  ...prev,
-                  recipients: event.target.value.split(',').map((email) => email.trim()).filter((email) => email.length > 0),
-                }))
-              }
-            />
-          </div>
-          <div className="page-head__actions">
-            <button type="button" className="primary-btn" onClick={handleSaveSchedule}>Save Schedule</button>
-          </div>
-          <p className="overview-note">Next delivery: <strong>{formatScheduleDateTime(nextSchedule)}</strong></p>
-          {scheduleSavedMessage && <p className="overview-note">{scheduleSavedMessage}</p>}
-        </article>
-
-        <article className="overview-card">
-          <h3>
-            <span className="material-symbols-rounded">history</span>
-            <span>Historical Reports</span>
-          </h3>
-          <ul className="overview-list">
-            {historicalReports.length === 0 && <li className="overview-list__empty">No historical reports downloaded yet.</li>}
-            {historicalReports.map((item) => (
-              <li key={item.id} className="report-history-item">
-                <span>
-                  <strong>{item.fileName}</strong>
-                  <br />
-                  {new Date(item.createdAt).toLocaleString('en-GB')} • {item.rowCount} rows • {item.format.toUpperCase()}
-                  <br />
-                  Filters: {formatFilterLabel(item.filters.department)} / {formatFilterLabel(item.filters.jobTitle)} / {formatFilterLabel(item.filters.recruiter)} / {formatFilterLabel(item.filters.location)}
-                </span>
-                <button type="button" className="ghost-btn" onClick={() => handleDownloadHistorical(item)}>
-                  <span className="material-symbols-rounded">download</span>
-                  Download
-                </button>
-              </li>
-            ))}
-          </ul>
-        </article>
-      </section>
+      {/* <section className="overview-grid reports-overview-grid">
+        Auto scheduling email delivery and historical reports are intentionally commented out.
+      </section> */}
     </>
   )
 }

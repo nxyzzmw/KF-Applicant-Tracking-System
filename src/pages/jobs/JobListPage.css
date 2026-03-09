@@ -1586,6 +1586,17 @@ tbody td span {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.report-date-filter-field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.report-date-filter-field span {
+  font-size: 0.8rem;
+  color: var(--text-muted-2);
+  padding-left: 0.1rem;
+}
+
 .report-table-panel {
   max-height: 460px;
   overflow: auto;
